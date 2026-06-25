@@ -48,6 +48,10 @@ type Config struct {
 	SessionIdle     time.Duration
 	SessionAbsolute time.Duration
 
+	// SessionDSN, when set, selects the Postgres-backed session store (durable /
+	// multi-instance). Empty uses the in-memory store (single instance).
+	SessionDSN string
+
 	// CookieSecure controls the Secure attribute (and the __Host- cookie name).
 	// Default true; set false only for local HTTP development.
 	CookieSecure bool
@@ -83,6 +87,7 @@ func LoadConfig() (*Config, error) {
 		Scopes:          getenv("BFF_SCOPES", "openid profile email"),
 		SessionIdle:     getdur("BFF_SESSION_IDLE", 30*time.Minute),
 		SessionAbsolute: getdur("BFF_SESSION_ABSOLUTE", 8*time.Hour),
+		SessionDSN:      getenv("BFF_SESSION_DSN", ""),
 		CookieSecure:    getbool("BFF_COOKIE_SECURE", true),
 	}
 

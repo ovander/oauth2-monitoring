@@ -27,7 +27,14 @@ type Server struct {
 	oauth *oauthClient
 }
 
+// NewServer builds a Server with the default (in-memory) session store.
 func NewServer(cfg *Config) *Server {
+	return NewServerWithStore(cfg, nil)
+}
+
+// NewServerWithStore builds a Server with an explicit session store (e.g.
+// Postgres). A nil store falls back to the in-memory store when auth is enabled.
+func NewServerWithStore(cfg *Config, store SessionStore) *Server {
 	proxy := httputil.NewSingleHostReverseProxy(cfg.adminURL)
 	proxy.FlushInterval = -1 // stream SSE immediately
 	director := proxy.Director
@@ -38,7 +45,10 @@ func NewServer(cfg *Config) *Server {
 
 	s := &Server{cfg: cfg, proxy: proxy}
 	if cfg.AuthEnabled() {
-		s.store = NewMemorySessionStore(cfg.SessionIdle, cfg.SessionAbsolute)
+		if store == nil {
+			store = NewMemorySessionStore(cfg.SessionIdle, cfg.SessionAbsolute)
+		}
+		s.store = store
 		s.oauth = newOAuthClient(cfg)
 	}
 	return s
@@ -58,10 +68,13 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-// StartSweeper runs the in-memory store's expiry sweep until ctx is cancelled.
-// No-op for non-memory stores.
+// sweepable is implemented by stores that prune expired rows in bulk.
+type sweepable interface{ sweep() }
+
+// StartSweeper periodically prunes expired sessions/login-state until ctx is
+// cancelled. No-op for stores that don't implement sweep().
 func (s *Server) StartSweeper(ctx context.Context) {
-	ms, ok := s.store.(*MemorySessionStore)
+	sw, ok := s.store.(sweepable)
 	if !ok {
 		return
 	}
@@ -73,7 +86,7 @@ func (s *Server) StartSweeper(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				ms.sweep()
+				sw.sweep()
 			}
 		}
 	}()

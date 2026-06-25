@@ -48,6 +48,7 @@ Browser ──HTTPS──► Caddy (monitoring.vandermoten.eu)
 | `BFF_SCOPES` | `openid profile email` | Requested scopes. |
 | `BFF_SESSION_IDLE` | `30m` | Idle session timeout. |
 | `BFF_SESSION_ABSOLUTE` | `8h` | Absolute session lifetime. |
+| `BFF_SESSION_DSN` | *(empty)* | Postgres DSN for the **durable** session store (survives restarts / multi-instance). Empty = in-memory (single instance). |
 | `BFF_COOKIE_SECURE` | `true` | `Secure` attribute + `__Host-` cookie name. Set `false` only for local HTTP dev. |
 
 ## Run
@@ -83,8 +84,8 @@ Wire it into Caddy with [`Caddyfile.example`](./Caddyfile.example).
 - **Phase 2 (here):** `/bff/login|callback|session|logout`, server-side sessions,
   `__Host-` `HttpOnly`/`Secure`/`SameSite=Strict` cookie, server-side token
   injection — **the milestone that removes tokens from the browser**. ✅
-  *(in-memory store; Postgres-backed store is the next durability step.)*
-- **Phase 2b:** Postgres-backed session store (durable / HA).
+- **Phase 2b (here):** Postgres-backed session store — set `BFF_SESSION_DSN` for
+  durable, multi-instance sessions that survive restarts. ✅
 - **Phase 3:** CSRF double-submit enforcement, `/bff/elevate` step-up passthrough,
   scope-limited (`monitoring:read`/`write`) confidential client (#201).
 - **Phase 4:** DPoP (RFC 9449) on the BFF → Socrate leg (#202).
