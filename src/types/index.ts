@@ -21,6 +21,8 @@ export type SecurityEventType =
   | 'pkce_validation_failed'
   // Delegation (RFC 8693 token exchange)
   | 'token_exchange'
+  // Sender-constrained tokens (DPoP, RFC 9449)
+  | 'dpop_validation_failed'
   // MFA / step-up (RFC-011)
   | 'mfa_policy_violation' | 'mfa_recovery_code_used'
   // Threat detection & integrity
@@ -445,6 +447,7 @@ export const EVENT_TYPE_LABELS: Record<string, string> = {
   auth_code_failed: 'Auth Code Failed',
   pkce_validation_failed: 'PKCE Validation Failed',
   token_exchange: 'Token Exchange',
+  dpop_validation_failed: 'DPoP Validation Failed',
   mfa_policy_violation: 'MFA Policy Violation',
   mfa_recovery_code_used: 'MFA Recovery Code Used',
   suspicious_activity: 'Suspicious Activity',
@@ -507,6 +510,7 @@ export const EVENT_TYPE_CATEGORIES: Record<SecurityEventType, EventCategory> = {
   auth_code_failed: 'oauth',
   pkce_validation_failed: 'oauth',
   token_exchange: 'delegation',
+  dpop_validation_failed: 'oauth',
   mfa_policy_violation: 'mfa',
   mfa_recovery_code_used: 'mfa',
   suspicious_activity: 'threat',
@@ -558,6 +562,12 @@ export const OAUTH21_SIGNALS: OAuth21Signal[] = [
     label: 'Token Exchange (Delegation)',
     rationale: 'A delegation / impersonation token-exchange was processed — monitor for privilege escalation.',
     spec: 'RFC 8693'
+  },
+  {
+    event_type: 'dpop_validation_failed',
+    label: 'DPoP Proof Failure',
+    rationale: 'A sender-constraint proof at the token endpoint was present but invalid (bad signature, replay, or htm/htu/iat mismatch) — stolen-token replay against a DPoP-bound client, or client misconfiguration.',
+    spec: 'RFC 9449'
   },
   {
     event_type: 'mfa_policy_violation',
