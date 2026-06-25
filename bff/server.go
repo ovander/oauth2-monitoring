@@ -99,10 +99,16 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 
 // proxyAdmin forwards allowlisted admin-API calls to Socrate, injecting the
 // session's access token when there is a session (Phase 2) and otherwise passing
-// the request through unchanged (Phase 1 / pre-cookie SPA).
+// the request through unchanged (Phase 1 / pre-cookie SPA). For a session-backed
+// request, mutating methods must carry a valid CSRF token (defense-in-depth on
+// top of SameSite=Strict).
 func (s *Server) proxyAdmin(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.AuthEnabled() && s.store != nil {
 		if sess := s.currentSession(w, r); sess != nil {
+			if isMutating(r.Method) && !s.checkCSRF(r, sess) {
+				writeJSON(w, map[string]any{"error": "invalid_csrf"}, http.StatusForbidden)
+				return
+			}
 			if err := s.ensureFresh(r.Context(), sess); err != nil {
 				writeJSON(w, map[string]any{"error": "session expired"}, http.StatusUnauthorized)
 				return
@@ -111,6 +117,16 @@ func (s *Server) proxyAdmin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.proxy.ServeHTTP(w, r)
+}
+
+// isMutating reports whether a method changes server state (and thus needs CSRF).
+func isMutating(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
 }
 
 // ensureFresh proactively refreshes a session's access token shortly before it
