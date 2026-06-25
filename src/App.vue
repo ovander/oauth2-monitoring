@@ -6,6 +6,7 @@ import { useMonitorStore } from '@/stores/monitorStore'
 import { useVersionCheck } from '@/composables/useVersionCheck'
 import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import VersionBadge from '@/components/VersionBadge.vue'
+import StepUpDialog from '@/components/StepUpDialog.vue'
 import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
 
@@ -146,6 +147,7 @@ function logout() {
     <!-- Global Components -->
     <Toast position="top-right" />
     <ConfirmDialog />
+    <StepUpDialog />
   </div>
 </template>
 

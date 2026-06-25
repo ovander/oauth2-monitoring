@@ -3,6 +3,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useApi } from '@/composables/useApi'
 import { useAuthStore } from '@/stores/authStore'
 import { useMonitorStore } from '@/stores/monitorStore'
+import { useStepUpStore } from '@/stores/stepUpStore'
 import { makeJwt, mockResponse, mockErrorResponse } from '@/__tests__/helpers'
 
 beforeEach(() => {
@@ -138,6 +139,62 @@ describe('fetchDashboardStats', () => {
 
     expect(loadingDuring).toBe(true)
     expect(monitorStore.isLoading['stats']).toBe(false)
+  })
+})
+
+// ─── fetchWithAuth — step-up (elevation) ──────────────────────────────────────
+
+describe('fetchWithAuth — step-up', () => {
+  it('drives step-up on 403 elevation_required and retries once with the fresh token', async () => {
+    loginStore()
+    const stepUp = useStepUpStore()
+    const reqSpy = vi.spyOn(stepUp, 'request').mockResolvedValue()
+
+    let call = 0
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => {
+      call++
+      if (call === 1) return Promise.resolve(mockResponse({ error: 'elevation_required' }, 403))
+      return Promise.resolve(mockResponse({ ok: true }))
+    }))
+
+    const api = useApi()
+    const res = await api.fetchWithAuth('https://example.com/api/admin/security/blocked-ips', { method: 'POST' })
+
+    expect(reqSpy).toHaveBeenCalledOnce()
+    expect(res.status).toBe(200)
+    expect(call).toBe(2)
+  })
+
+  it('does not loop forever if elevation_required persists after one elevation', async () => {
+    loginStore()
+    const stepUp = useStepUpStore()
+    vi.spyOn(stepUp, 'request').mockResolvedValue()
+
+    let call = 0
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => {
+      call++
+      return Promise.resolve(mockResponse({ error: 'elevation_required' }, 403))
+    }))
+
+    const api = useApi()
+    const res = await api.fetchWithAuth('https://example.com/api/x', { method: 'POST' })
+
+    expect(res.status).toBe(403)
+    expect(call).toBe(2)
+  })
+
+  it('passes through an unrelated 403 without prompting for step-up', async () => {
+    loginStore()
+    const stepUp = useStepUpStore()
+    const reqSpy = vi.spyOn(stepUp, 'request').mockResolvedValue()
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse({ error: 'forbidden' }, 403)))
+
+    const api = useApi()
+    const res = await api.fetchWithAuth('https://example.com/api/x')
+
+    expect(reqSpy).not.toHaveBeenCalled()
+    expect(res.status).toBe(403)
   })
 })
 
