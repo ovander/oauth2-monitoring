@@ -23,6 +23,8 @@ export type SecurityEventType =
   | 'token_exchange'
   // Sender-constrained tokens (DPoP, RFC 9449)
   | 'dpop_validation_failed'
+  // OAuth client lifecycle (admin-plane; alertable — audit §9)
+  | 'client_created' | 'client_updated' | 'client_deleted' | 'client_secret_rotated'
   // MFA / step-up (RFC-011)
   | 'mfa_policy_violation' | 'mfa_recovery_code_used'
   // Threat detection & integrity
@@ -448,6 +450,10 @@ export const EVENT_TYPE_LABELS: Record<string, string> = {
   pkce_validation_failed: 'PKCE Validation Failed',
   token_exchange: 'Token Exchange',
   dpop_validation_failed: 'DPoP Validation Failed',
+  client_created: 'Client Created',
+  client_updated: 'Client Updated',
+  client_deleted: 'Client Deleted',
+  client_secret_rotated: 'Client Secret Rotated',
   mfa_policy_violation: 'MFA Policy Violation',
   mfa_recovery_code_used: 'MFA Recovery Code Used',
   suspicious_activity: 'Suspicious Activity',
@@ -465,6 +471,7 @@ export type EventCategory =
   | 'token'
   | 'oauth'
   | 'delegation'
+  | 'client'
   | 'mfa'
   | 'threat'
   | 'integrity'
@@ -475,6 +482,7 @@ export const EVENT_CATEGORY_LABELS: Record<EventCategory, string> = {
   token: 'Token Lifecycle',
   oauth: 'OAuth 2.1 Flow',
   delegation: 'Delegation',
+  client: 'Client Lifecycle',
   mfa: 'Multi-Factor Auth',
   threat: 'Threat Detection',
   integrity: 'Audit Integrity'
@@ -511,6 +519,10 @@ export const EVENT_TYPE_CATEGORIES: Record<SecurityEventType, EventCategory> = {
   pkce_validation_failed: 'oauth',
   token_exchange: 'delegation',
   dpop_validation_failed: 'oauth',
+  client_created: 'client',
+  client_updated: 'client',
+  client_deleted: 'client',
+  client_secret_rotated: 'client',
   mfa_policy_violation: 'mfa',
   mfa_recovery_code_used: 'mfa',
   suspicious_activity: 'threat',
