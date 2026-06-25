@@ -264,6 +264,12 @@ onMounted(() => {
             <div>{{ selectedEvent.user_email || 'N/A' }}</div>
           </div>
         </div>
+        <div v-if="selectedEvent.correlation_id">
+          <div class="text-xs text-[var(--color-text-muted)] uppercase">Correlation ID</div>
+          <div class="font-mono text-xs bg-[var(--color-surface-100)] p-2 rounded mt-1 break-all">
+            {{ selectedEvent.correlation_id }}
+          </div>
+        </div>
         <div v-if="selectedEvent.user_agent">
           <div class="text-xs text-[var(--color-text-muted)] uppercase">User Agent</div>
           <div class="font-mono text-xs bg-[var(--color-surface-100)] p-2 rounded mt-1 break-all">

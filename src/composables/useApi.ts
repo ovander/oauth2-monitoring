@@ -18,7 +18,8 @@ import type {
   BlockedIP,
   IPReputation,
   ReportRequest,
-  ReportStatus
+  ReportStatus,
+  AdminAuditLogsResponse
 } from '@/types'
 
 export function useApi() {
@@ -156,7 +157,8 @@ export function useApi() {
   async function fetchThreatMetrics(timeRange = '24h'): Promise<ThreatMetrics> {
     monitorStore.setLoading('threats', true)
     try {
-      const response = await fetchWithAuth(`${getBaseUrl()}/api/admin/security/threats?time_range=${timeRange}`)
+      // Socrate reads the `period` query parameter (15m|1h|24h|7d|30d).
+      const response = await fetchWithAuth(`${getBaseUrl()}/api/admin/security/threats?period=${timeRange}`)
       if (!response.ok) throw new Error('Failed to fetch threats')
       const data = await response.json()
       monitorStore.setThreatMetrics(data)
@@ -190,11 +192,15 @@ export function useApi() {
     }
   }
 
-  async function revokeSession(sessionId: string): Promise<void> {
-    const response = await fetchWithAuth(`${getBaseUrl()}/api/admin/sessions/${sessionId}`, {
-      method: 'DELETE'
+  // Socrate has no per-session revocation endpoint — "sessions" are derived from
+  // the security audit log, not a stored session table. The correct OAuth 2.1
+  // action is to revoke every token for the underlying user, which terminates
+  // all of their active sessions across apps.
+  async function revokeUserTokens(userId: number): Promise<void> {
+    const response = await fetchWithAuth(`${getBaseUrl()}/api/admin/users/${userId}/revoke-tokens`, {
+      method: 'POST'
     })
-    if (!response.ok) throw new Error('Failed to revoke session')
+    if (!response.ok) throw new Error('Failed to revoke user tokens')
   }
 
   async function fetchTokenStats(period = '24h'): Promise<TokenStats> {
@@ -368,6 +374,59 @@ export function useApi() {
     return `${getBaseUrl()}/api/admin/reports/${reportId}/download`
   }
 
+  // ── Admin audit logs (who-did-what administrative trail) ───────────────────
+  function buildAuditLogParams(params: {
+    admin_id?: number
+    action?: string
+    target_type?: string
+    start_date?: string
+    end_date?: string
+    page?: number
+    page_size?: number
+  }): URLSearchParams {
+    const searchParams = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') {
+        searchParams.append(key, String(value))
+      }
+    })
+    return searchParams
+  }
+
+  async function fetchAuditLogs(params: {
+    admin_id?: number
+    action?: string
+    target_type?: string
+    start_date?: string
+    end_date?: string
+    page?: number
+    page_size?: number
+  } = {}): Promise<AdminAuditLogsResponse> {
+    monitorStore.setLoading('auditLogs', true)
+    try {
+      const searchParams = buildAuditLogParams(params)
+      const response = await fetchWithAuth(`${getBaseUrl()}/api/admin/logs?${searchParams}`)
+      if (!response.ok) throw new Error('Failed to fetch audit logs')
+      const data = await response.json()
+      monitorStore.setAuditLogs(data.logs || [], data.total_count || 0)
+      return data
+    } finally {
+      monitorStore.setLoading('auditLogs', false)
+    }
+  }
+
+  function getAuditLogExportUrl(params: {
+    admin_id?: number
+    action?: string
+    target_type?: string
+    start_date?: string
+    end_date?: string
+  } = {}): string {
+    const searchParams = buildAuditLogParams(params)
+    const qs = searchParams.toString()
+    return `${getBaseUrl()}/api/admin/logs/export${qs ? `?${qs}` : ''}`
+  }
+
   return {
     fetchWithAuth,
     getBaseUrl,
@@ -379,7 +438,7 @@ export function useApi() {
     fetchSecurityEvents,
     fetchThreatMetrics,
     fetchSessions,
-    revokeSession,
+    revokeUserTokens,
     fetchTokenStats,
     fetchGeoAnalytics,
     fetchAlertRules,
@@ -394,6 +453,8 @@ export function useApi() {
     fetchIPReputation,
     generateReport,
     fetchReportStatus,
-    getReportDownloadUrl
+    getReportDownloadUrl,
+    fetchAuditLogs,
+    getAuditLogExportUrl
   }
 }

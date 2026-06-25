@@ -37,6 +37,7 @@ const router = createRouter({
     // ── Admin routes (write access — monitor_admin, admin only) ───────────────
     { path: '/alerts',      name: 'alerts',      component: () => import('@/views/AlertsView.vue'),      meta: { requiresAuth: true, requiresAdmin: true } },
     { path: '/blocked-ips', name: 'blocked-ips', component: () => import('@/views/BlockedIPsView.vue'),  meta: { requiresAuth: true, requiresAdmin: true } },
+    { path: '/audit-logs',  name: 'audit-logs',  component: () => import('@/views/AuditLogsView.vue'),   meta: { requiresAuth: true, requiresAdmin: true } },
     { path: '/settings',    name: 'settings',    component: () => import('@/views/SettingsView.vue'),    meta: { requiresAuth: true, requiresAdmin: true } },
   ]
 })

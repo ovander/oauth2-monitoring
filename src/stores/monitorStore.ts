@@ -15,7 +15,8 @@ import type {
   TriggeredAlert,
   BlockedIP,
   IPReputation,
-  ReportStatus
+  ReportStatus,
+  AdminAuditLog
 } from '@/types'
 
 export const useMonitorStore = defineStore('monitor', () => {
@@ -48,6 +49,10 @@ export const useMonitorStore = defineStore('monitor', () => {
 
   // Reports
   const reports = ref<ReportStatus[]>([])
+
+  // Admin audit logs
+  const auditLogs = ref<AdminAuditLog[]>([])
+  const auditLogsTotal = ref(0)
 
   // Real-time events (SSE)
   const liveEvents = ref<SecurityEvent[]>([])
@@ -196,6 +201,11 @@ export const useMonitorStore = defineStore('monitor', () => {
     }
   }
 
+  function setAuditLogs(data: AdminAuditLog[], total: number) {
+    auditLogs.value = data
+    auditLogsTotal.value = total
+  }
+
   return {
     // State
     stats,
@@ -216,6 +226,8 @@ export const useMonitorStore = defineStore('monitor', () => {
     alertsTotal,
     unacknowledgedAlerts,
     reports,
+    auditLogs,
+    auditLogsTotal,
     liveEvents,
     isSSEConnected,
     isLoading,
@@ -249,6 +261,7 @@ export const useMonitorStore = defineStore('monitor', () => {
     setSSEConnected,
     clearLiveEvents,
     addReport,
-    updateReport
+    updateReport,
+    setAuditLogs
   }
 })

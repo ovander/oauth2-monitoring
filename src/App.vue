@@ -31,6 +31,7 @@ const navItems = [
   { name: 'Token Analytics', route: 'tokens', icon: 'pi-key' },
   { name: 'Alerts', route: 'alerts', icon: 'pi-bell', badge: true },
   { name: 'Blocked IPs', route: 'blocked-ips', icon: 'pi-ban' },
+  { name: 'Audit Trail', route: 'audit-logs', icon: 'pi-history' },
   { name: 'Reports', route: 'reports', icon: 'pi-file' }
 ]
 
