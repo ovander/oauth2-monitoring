@@ -20,7 +20,7 @@ import InputNumber from 'primevue/inputnumber'
 import ProgressBar from 'primevue/progressbar'
 import Skeleton from 'primevue/skeleton'
 
-import type { SuspiciousIP, LockedAccount, IPReputation } from '@/types'
+import type { SuspiciousIP, LockedAccount, IPReputation, AuditIntegrity } from '@/types'
 import { OAUTH21_SIGNALS } from '@/types'
 
 const store = useMonitorStore()
@@ -67,11 +67,32 @@ const threatLevelInfo = computed(() => {
   return { level: 'LOW', color: 'success', description: 'No significant threats' }
 })
 
+const auditIntegrity = ref<AuditIntegrity | null>(null)
+
+const integrityInfo = computed(() => {
+  const ai = auditIntegrity.value
+  if (!ai) return { label: 'Loading…', severity: 'secondary' as const, icon: 'pi-spinner' }
+  switch (ai.status) {
+    case 'violations_detected':
+      return { label: 'Violations Detected', severity: 'danger' as const, icon: 'pi-times-circle' }
+    case 'not_configured':
+      return { label: 'Not Configured', severity: 'warning' as const, icon: 'pi-exclamation-triangle' }
+    default:
+      return { label: 'Verified', severity: 'success' as const, icon: 'pi-verified' }
+  }
+})
+
 async function loadThreats() {
   try {
     await api.fetchThreatMetrics(timeRange.value)
   } catch (error) {
     toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to load threat data', life: 3000 })
+  }
+  // Audit-integrity health is independent — a failure here must not blank the page.
+  try {
+    auditIntegrity.value = await api.fetchAuditIntegrity(timeRange.value)
+  } catch {
+    auditIntegrity.value = null
   }
 }
 
@@ -283,6 +304,68 @@ onMounted(() => {
           <div class="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)] mt-1">
             <i class="pi pi-book mr-1"></i>{{ signal.spec }}
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audit Integrity (RFC-007) -->
+    <div class="panel mb-6">
+      <div class="panel-header">
+        <i class="pi pi-lock text-[var(--color-accent-primary)]"></i>
+        Audit Log Integrity
+        <span class="text-xs font-normal text-[var(--color-text-muted)] ml-1">RFC-007</span>
+        <Tag class="ml-auto" :value="integrityInfo.label" :severity="integrityInfo.severity" />
+      </div>
+      <p class="text-xs text-[var(--color-text-muted)] mb-3">
+        Tamper-evidence of the security audit log — per-row HMAC stamping and hash-chain linkage,
+        verified by the scheduled integrity scanner.
+      </p>
+      <div v-if="auditIntegrity" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="p-3 rounded-lg bg-[var(--color-surface-100)] border border-[var(--color-border-subtle)]">
+          <div class="metric-value text-xl">{{ auditIntegrity.coverage_percent }}%</div>
+          <div class="metric-label">Stamp Coverage</div>
+          <div class="text-[10px] text-[var(--color-text-muted)] mt-1">
+            {{ auditIntegrity.stamped_events.toLocaleString() }} / {{ auditIntegrity.total_events.toLocaleString() }} events
+          </div>
+        </div>
+        <div class="p-3 rounded-lg bg-[var(--color-surface-100)] border border-[var(--color-border-subtle)]">
+          <div class="metric-value text-xl">{{ auditIntegrity.chained_events.toLocaleString() }}</div>
+          <div class="metric-label">Chained Rows</div>
+        </div>
+        <div
+          class="p-3 rounded-lg border"
+          :class="auditIntegrity.violations > 0
+            ? 'bg-[var(--color-status-critical)]/10 border-[var(--color-status-critical)]/30'
+            : 'bg-[var(--color-surface-100)] border-[var(--color-border-subtle)]'"
+        >
+          <div
+            class="metric-value text-xl"
+            :class="auditIntegrity.violations > 0 ? 'text-[var(--color-status-critical)]' : ''"
+          >{{ auditIntegrity.violations }}</div>
+          <div class="metric-label">Violations</div>
+        </div>
+        <div class="p-3 rounded-lg bg-[var(--color-surface-100)] border border-[var(--color-border-subtle)]">
+          <div class="text-sm font-medium">
+            {{ auditIntegrity.last_violation_at ? formatTime(auditIntegrity.last_violation_at) : 'None' }}
+          </div>
+          <div class="metric-label">Last Violation</div>
+        </div>
+      </div>
+      <div v-else class="text-sm text-[var(--color-text-muted)]">Integrity status unavailable.</div>
+
+      <!-- Recent violations detail -->
+      <div v-if="auditIntegrity && auditIntegrity.recent_violations.length" class="mt-3 space-y-2">
+        <div
+          v-for="v in auditIntegrity.recent_violations"
+          :key="v.event_id"
+          class="flex items-center justify-between p-2 rounded bg-[var(--color-status-critical)]/10 text-sm"
+        >
+          <span>
+            <i class="pi pi-exclamation-circle text-[var(--color-status-critical)] mr-2"></i>
+            <span class="font-medium">{{ v.kind === 'chain' ? 'Hash-chain break' : v.kind === 'hmac' ? 'Row HMAC mismatch' : 'Integrity violation' }}</span>
+            <span class="text-xs text-[var(--color-text-muted)] ml-2 font-mono">event #{{ v.event_id }}</span>
+          </span>
+          <span class="text-xs text-[var(--color-text-muted)]">{{ formatTime(v.detected_at) }}</span>
         </div>
       </div>
     </div>

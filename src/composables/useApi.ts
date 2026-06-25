@@ -19,7 +19,8 @@ import type {
   IPReputation,
   ReportRequest,
   ReportStatus,
-  AdminAuditLogsResponse
+  AdminAuditLogsResponse,
+  AuditIntegrity
 } from '@/types'
 
 export function useApi() {
@@ -214,6 +215,12 @@ export function useApi() {
     } finally {
       monitorStore.setLoading('tokenStats', false)
     }
+  }
+
+  async function fetchAuditIntegrity(period = '24h'): Promise<AuditIntegrity> {
+    const response = await fetchWithAuth(`${getBaseUrl()}/api/admin/security/audit-integrity?period=${period}`)
+    if (!response.ok) throw new Error('Failed to fetch audit integrity')
+    return response.json()
   }
 
   async function fetchGeoAnalytics(period = '24h'): Promise<GeoAnalytics> {
@@ -441,6 +448,7 @@ export function useApi() {
     revokeUserTokens,
     fetchTokenStats,
     fetchGeoAnalytics,
+    fetchAuditIntegrity,
     fetchAlertRules,
     createAlertRule,
     updateAlertRule,

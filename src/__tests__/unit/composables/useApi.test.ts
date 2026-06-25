@@ -209,6 +209,30 @@ describe('fetchAuditLogs', () => {
   })
 })
 
+// ─── fetchAuditIntegrity ──────────────────────────────────────────────────────
+
+describe('fetchAuditIntegrity', () => {
+  it('calls the audit-integrity endpoint with the period', async () => {
+    loginStore()
+    let calledUrl = ''
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url) => {
+      calledUrl = String(url)
+      return Promise.resolve(mockResponse({
+        period: '24h', configured: true, status: 'verified',
+        total_events: 10, stamped_events: 10, chained_events: 9,
+        coverage_percent: 100, violations: 0, recent_violations: []
+      }))
+    }))
+
+    const api = useApi()
+    const result = await api.fetchAuditIntegrity('24h')
+
+    expect(calledUrl).toContain('/api/admin/security/audit-integrity?period=24h')
+    expect(result.status).toBe('verified')
+    expect(result.coverage_percent).toBe(100)
+  })
+})
+
 // ─── blockIP / unblockIP ──────────────────────────────────────────────────────
 
 describe('blockIP', () => {
