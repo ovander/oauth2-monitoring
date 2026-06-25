@@ -22,7 +22,6 @@ const form = ref({
   adminUrl: authStore.config.adminUrl,
   oauthUrl: authStore.config.oauthUrl,
   clientId: authStore.config.clientId,
-  clientSecret: authStore.config.clientSecret,
   scopes: [...authStore.config.scopes]
 })
 
@@ -70,10 +69,9 @@ async function save() {
       adminUrl: form.value.adminUrl,
       oauthUrl: form.value.oauthUrl,
       clientId: form.value.clientId,
-      clientSecret: form.value.clientSecret,
       scopes: form.value.scopes
     })
-    toast.add({ severity: 'success', summary: 'Settings saved', detail: 'Configuration updated. Client secret is stored in-memory only.', life: 4000 })
+    toast.add({ severity: 'success', summary: 'Settings saved', detail: 'Configuration updated.', life: 4000 })
   } catch {
     toast.add({ severity: 'error', summary: 'Save failed', detail: 'Could not save settings.', life: 3000 })
   } finally {
@@ -149,16 +147,6 @@ function logout() {
             <IconField>
               <InputIcon class="pi pi-key" />
               <InputText v-model="form.clientId" class="w-full" placeholder="security-monitor" />
-            </IconField>
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-2">
-              Client Secret <Tag value="Optional — in-memory" severity="secondary" class="ml-2 text-xs" />
-            </label>
-            <IconField>
-              <InputIcon class="pi pi-lock" />
-              <InputText v-model="form.clientSecret" type="password" class="w-full" placeholder="Leave empty for public PKCE clients" />
             </IconField>
           </div>
 
