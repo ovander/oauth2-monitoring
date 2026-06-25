@@ -10,6 +10,39 @@ beforeEach(() => {
   vi.restoreAllMocks()
 })
 
+// ─── elevate (step-up) ───────────────────────────────────────────────────────
+
+describe('elevate (step-up)', () => {
+  it('posts to /api/admin/elevate and swaps the access token, preserving the refresh token', async () => {
+    const store = useAuthStore()
+    store.setTokens({ accessToken: makeJwt({ sub: 'u1', roles: ['admin'] }), refreshToken: 'rt-1', expiresIn: 3600, tokenType: 'Bearer' })
+    const fresh = makeJwt({ sub: 'u1', roles: ['admin'], auth_time: Math.floor(Date.now() / 1000) })
+
+    let calledUrl = ''
+    let calledBody: any
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url, opts) => {
+      calledUrl = String(url)
+      calledBody = JSON.parse(opts.body)
+      return Promise.resolve(mockResponse({ access_token: fresh, expires_in: 3600, token_type: 'Bearer' }))
+    }))
+
+    await store.elevate('my-password')
+
+    expect(calledUrl).toContain('/api/admin/elevate')
+    expect(calledBody.password).toBe('my-password')
+    expect(store.getAccessToken()).toBe(fresh)
+    expect(store.tokens?.refreshToken).toBe('rt-1')
+  })
+
+  it('throws the server error code on failure (e.g. mfa_required)', async () => {
+    const store = useAuthStore()
+    store.setTokens({ accessToken: makeJwt({ sub: 'u1' }), refreshToken: 'rt', expiresIn: 3600, tokenType: 'Bearer' })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse({ error: 'mfa_required' }, 401)))
+
+    await expect(store.elevate('pw')).rejects.toThrow('mfa_required')
+  })
+})
+
 // ─── loadStoredConfig ────────────────────────────────────────────────────────
 
 describe('loadStoredConfig', () => {

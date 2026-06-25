@@ -295,6 +295,38 @@ export const useAuthStore = defineStore('auth', () => {
     })
   }
 
+  // Step-up (Tier-0 elevation): re-present the password (and MFA, if enrolled)
+  // to POST /api/admin/elevate and obtain a fresh-auth_time access token, which
+  // replaces the current one for destructive admin calls. The refresh token is
+  // intentionally preserved (elevation does not start a new session).
+  // Throws an Error whose message is the server's machine code on failure
+  // (e.g. 'mfa_required', 'invalid credentials').
+  async function elevate(password: string, mfaCode?: string): Promise<void> {
+    const token = getAccessToken()
+    if (!token) throw new Error('Not authenticated')
+
+    const url = `${config.value.adminUrl}/api/admin/elevate`
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password, mfa_code: mfaCode })
+    })
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({} as Record<string, unknown>))
+      throw new Error((data as { error?: string }).error || 'Step-up failed')
+    }
+
+    const data = await response.json()
+    setTokens({
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token || tokens.value?.refreshToken,
+      idToken: data.id_token || tokens.value?.idToken,
+      expiresIn: data.expires_in,
+      tokenType: data.token_type
+    })
+  }
+
   function logout() {
     tokens.value = null
     user.value = null
@@ -330,6 +362,7 @@ export const useAuthStore = defineStore('auth', () => {
     getAuthorizationUrlAsync,
     exchangeCode,
     refreshAccessToken,
+    elevate,
     logout,
     getAccessToken
   }

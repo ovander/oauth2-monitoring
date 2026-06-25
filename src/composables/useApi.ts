@@ -1,5 +1,6 @@
 import { useAuthStore } from '@/stores/authStore'
 import { useMonitorStore } from '@/stores/monitorStore'
+import { useStepUpStore } from '@/stores/stepUpStore'
 import type {
   DashboardStats,
   ActivityResponse,
@@ -26,9 +27,16 @@ import type {
 export function useApi() {
   const authStore = useAuthStore()
   const monitorStore = useMonitorStore()
+  const stepUp = useStepUpStore()
 
-  // SEC-05: retried flag prevents infinite recursion on repeated 401s
-  async function fetchWithAuth(url: string, options: RequestInit = {}, retried = false): Promise<Response> {
+  // SEC-05: retried flag prevents infinite recursion on repeated 401s.
+  // elevated flag prevents infinite recursion on repeated 403 elevation_required.
+  async function fetchWithAuth(
+    url: string,
+    options: RequestInit = {},
+    retried = false,
+    elevated = false
+  ): Promise<Response> {
     const token = authStore.getAccessToken()
     if (!token) {
       throw new Error('Not authenticated')
@@ -46,10 +54,21 @@ export function useApi() {
     if (response.status === 401 && !retried) {
       try {
         await authStore.refreshAccessToken()
-        return fetchWithAuth(url, options, true)
+        return fetchWithAuth(url, options, true, elevated)
       } catch {
         authStore.logout()
         throw new Error('Session expired')
+      }
+    }
+
+    // Tier-0 step-up: a destructive endpoint requires a recent authentication.
+    // Drive the elevation dialog, then retry the original request once with the
+    // fresh-auth_time token. Concurrent calls coalesce onto one elevation.
+    if (response.status === 403 && !elevated) {
+      const body = await response.clone().json().catch(() => null)
+      if (body && body.error === 'elevation_required') {
+        await stepUp.request()
+        return fetchWithAuth(url, options, retried, true)
       }
     }
 
