@@ -38,17 +38,27 @@ server-side, and proxies the SPA's read/write calls — attaching the access tok
 | Node/Express BFF | ➖ | Aligns with SPA tooling but adds a second runtime + npm supply-chain surface to a Tier-0 box — the opposite of what we want. |
 | oauth2-proxy / generic reverse proxy | ➖ | Good for opaque SSO, but we need monitoring-specific session, CSRF, and (later) DPoP minting — not a fit off the shelf. |
 
-The BFF ships as a **small standalone Go binary** that also **serves the built SPA
-static files** (replacing the nginx container as the monitoring app's edge). One
-origin, one process to harden.
+The BFF ships as a **small standalone Go binary**. The production environment
+already runs **Caddy** as the edge, so Caddy stays the TLS terminator, serves the
+SPA static files, and routes `/bff/*` + `/api/admin/*` to the BFF — the BFF is an
+**internal upstream**, not the edge. One origin (`monitoring.vandermoten.eu`),
+one process to harden. *(This supersedes an earlier draft that had the BFF
+replace nginx as the edge.)*
 
-### 2.2 Deployment topology
+### 2.2 Deployment topology (single VPS, Caddy edge)
 
 ```
-Browser ──HTTPS──> [ BFF (Go) ]  ──(server-side, token-injected)──> Socrate admin API
-   ▲  HttpOnly cookie   │ serves SPA static assets
-   └────────────────────┘ holds tokens in a server-side session store
+Browser ──HTTPS──► Caddy (monitoring.vandermoten.eu)
+   ▲  __Host- cookie   ├── /                → file_server (monitoring SPA dist/)
+   └───────────────────┴── /bff/* /api/admin/* → BFF (127.0.0.1:8090)
+                                                    │ holds tokens server-side
+                                                    └──► 127.0.0.1:8081  Socrate admin API (internal)
 ```
+
+Subdomains: `socrate.vandermoten.eu` = OAuth server (`:8080`),
+`admin.vandermoten.eu` = the admin SPA (separate frontend), `monitoring…` = this
+console. The admin API (`:8081`) gets **no public subdomain** — only the BFF
+reaches it, over localhost. See `bff/Caddyfile.example`.
 
 ---
 
@@ -166,16 +176,19 @@ Each phase is independently shippable and reversible behind config.
 
 ---
 
-## 11. Open decisions (need product/ops input)
+## 11. Decisions — resolved for the single-VPS environment (2026-06-25)
 
-1. **Edge model:** BFF *replaces* the nginx container (serves SPA + proxies), or
-   runs *beside* it? (Recommendation: replace — one origin, one Tier-0 surface.)
-2. **Session store for HA:** Redis vs. reuse Socrate's Postgres. (Recommendation:
-   Redis if already in the stack, else Postgres.)
-3. **Repo placement:** new `bff/` in `oauth2-monitoring`, or a module in
-   `go-oauth2`? (Recommendation: `bff/` in this repo — it is the monitoring
-   app's server, versioned with the SPA it serves.)
-4. **Timeouts:** idle/absolute session lifetimes for a SOC console.
+1. **Edge model:** ✅ **Caddy stays the edge** (TLS, static SPA, routing); the BFF
+   is an internal upstream on `127.0.0.1:8090`, reached only via Caddy.
+2. **Session store:** ✅ **Reuse the existing Postgres** (single VPS → no HA need
+   yet; Redis remains a drop-in upgrade for multi-instance).
+3. **Repo placement:** ✅ **`bff/` in `oauth2-monitoring`** — versioned with the SPA
+   it serves (this PR).
+4. **Timeouts:** proposed **30 min idle / 8 h absolute** for the SOC console
+   (configurable); confirm during Phase 2.
+5. **Admin-API exposure:** the admin API (`:8081`) binds **loopback only** and is
+   never given a public subdomain — the BFF reaches it over localhost, so the
+   Tier-0 control plane is off the public internet entirely.
 
 ---
 
