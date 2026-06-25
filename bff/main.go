@@ -25,7 +25,19 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	srv := NewServer(cfg)
+	// Durable session store when a DSN is configured; in-memory otherwise.
+	var store SessionStore
+	if cfg.AuthEnabled() && cfg.SessionDSN != "" {
+		ps, err := NewPostgresSessionStore(ctx, cfg.SessionDSN, cfg.SessionIdle, cfg.SessionAbsolute)
+		if err != nil {
+			log.Fatalf("bff: postgres session store: %v", err)
+		}
+		defer ps.Close()
+		store = ps
+		log.Printf("bff: using Postgres session store")
+	}
+
+	srv := NewServerWithStore(cfg, store)
 	srv.StartSweeper(ctx)
 
 	httpServer := &http.Server{
