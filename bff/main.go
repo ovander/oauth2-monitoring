@@ -22,21 +22,25 @@ func main() {
 		log.Fatalf("bff: config: %v", err)
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	srv := NewServer(cfg)
+	srv.StartSweeper(ctx)
+
 	httpServer := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           NewServer(cfg).Handler(),
+		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	go func() {
-		log.Printf("bff: listening on %s → admin upstream %s", cfg.ListenAddr, cfg.AdminUpstream)
+		log.Printf("bff: listening on %s → admin upstream %s (auth=%t)", cfg.ListenAddr, cfg.AdminUpstream, cfg.AuthEnabled())
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("bff: listen: %v", err)
 		}
 	}()
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	<-ctx.Done()
 
 	log.Println("bff: shutting down")

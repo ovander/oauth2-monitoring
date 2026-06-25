@@ -1,48 +1,81 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httputil"
+	"time"
 )
 
-// adminPrefix is the only path family the BFF proxies to Socrate. The BFF is an
-// allowlist, never an open proxy: anything outside this prefix (and the BFF's
-// own /bff/* routes) is 404.
+// adminPrefix is the only proxied path family. The BFF is an allowlist, never an
+// open proxy: anything outside this prefix (and /bff/*) is 404.
 const adminPrefix = "/api/admin/"
 
-// Server is the BFF HTTP handler. Phase 1 is a transparent, allowlisted reverse
-// proxy in front of the Socrate admin API; Phase 2 adds server-side sessions and
-// token injection so the browser stops carrying tokens.
+// Server is the BFF HTTP handler.
+//
+//   - Phase 1 (BFF_CLIENT_ID unset): transparent, allowlisted reverse proxy; the
+//     browser's bearer token is forwarded unchanged.
+//   - Phase 2 (BFF_CLIENT_ID set): server-side OAuth — /bff/login|callback|
+//     session|logout manage an HttpOnly-cookie session whose tokens live here;
+//     the proxy injects the session's access token. With no session it falls back
+//     to pass-through, so the server can deploy before the SPA switches to cookies.
 type Server struct {
 	cfg   *Config
 	proxy *httputil.ReverseProxy
+	store SessionStore
+	oauth *oauthClient
 }
 
-// NewServer builds a Server that proxies allowlisted admin-API calls to the
-// configured upstream.
 func NewServer(cfg *Config) *Server {
 	proxy := httputil.NewSingleHostReverseProxy(cfg.adminURL)
-
-	// FlushInterval -1 streams responses immediately so Server-Sent Events
-	// (/api/admin/events/stream) are not buffered by the proxy.
-	proxy.FlushInterval = -1
-
+	proxy.FlushInterval = -1 // stream SSE immediately
 	director := proxy.Director
 	proxy.Director = func(r *http.Request) {
 		director(r)
-		// Present the upstream's host to Socrate.
 		r.Host = cfg.adminURL.Host
 	}
 
-	return &Server{cfg: cfg, proxy: proxy}
+	s := &Server{cfg: cfg, proxy: proxy}
+	if cfg.AuthEnabled() {
+		s.store = NewMemorySessionStore(cfg.SessionIdle, cfg.SessionAbsolute)
+		s.oauth = newOAuthClient(cfg)
+	}
+	return s
 }
 
-// Handler returns the BFF's router.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/bff/healthz", s.health)
 	mux.HandleFunc(adminPrefix, s.proxyAdmin)
+	if s.cfg.AuthEnabled() {
+		mux.HandleFunc("/bff/login", s.handleLogin)
+		mux.HandleFunc("/bff/callback", s.handleCallback)
+		mux.HandleFunc("/bff/session", s.handleSession)
+		mux.HandleFunc("/bff/logout", s.handleLogout)
+	}
 	return mux
+}
+
+// StartSweeper runs the in-memory store's expiry sweep until ctx is cancelled.
+// No-op for non-memory stores.
+func (s *Server) StartSweeper(ctx context.Context) {
+	ms, ok := s.store.(*MemorySessionStore)
+	if !ok {
+		return
+	}
+	go func() {
+		t := time.NewTicker(time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				ms.sweep()
+			}
+		}
+	}()
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
@@ -50,12 +83,63 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
-// proxyAdmin forwards allowlisted admin-API calls to Socrate.
-//
-// Phase 1 is a transparent pass-through: the browser's Authorization header is
-// forwarded unchanged, proving the proxy + SSE path with no behavior change.
-// Phase 2 replaces this with a session lookup that injects the access token held
-// server-side by the BFF, so the browser no longer carries any token.
+// proxyAdmin forwards allowlisted admin-API calls to Socrate, injecting the
+// session's access token when there is a session (Phase 2) and otherwise passing
+// the request through unchanged (Phase 1 / pre-cookie SPA).
 func (s *Server) proxyAdmin(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.AuthEnabled() && s.store != nil {
+		if sess := s.currentSession(w, r); sess != nil {
+			if err := s.ensureFresh(r.Context(), sess); err != nil {
+				writeJSON(w, map[string]any{"error": "session expired"}, http.StatusUnauthorized)
+				return
+			}
+			r.Header.Set("Authorization", "Bearer "+sess.AccessToken)
+		}
+	}
 	s.proxy.ServeHTTP(w, r)
+}
+
+// ensureFresh proactively refreshes a session's access token shortly before it
+// expires. A refresh failure is terminal for the request (the SPA re-logs in).
+func (s *Server) ensureFresh(ctx context.Context, sess *Session) error {
+	if sess.RefreshToken == "" || time.Until(sess.AccessExpiry) > 30*time.Second {
+		return nil
+	}
+	tr, err := s.oauth.refresh(ctx, sess.RefreshToken)
+	if err != nil {
+		s.store.Delete(sess.ID)
+		return err
+	}
+	sess.AccessToken = tr.AccessToken
+	if tr.RefreshToken != "" {
+		sess.RefreshToken = tr.RefreshToken
+	}
+	if tr.IDToken != "" {
+		sess.IDToken = tr.IDToken
+	}
+	sess.AccessExpiry = time.Now().Add(time.Duration(tr.ExpiresIn) * time.Second)
+	s.store.Put(sess)
+	return nil
+}
+
+func (s *Server) currentSession(_ http.ResponseWriter, r *http.Request) *Session {
+	c, err := r.Cookie(s.cfg.SessionCookieName())
+	if err != nil {
+		return nil
+	}
+	sess, ok := s.store.Get(c.Value)
+	if !ok {
+		return nil
+	}
+	sess.LastSeen = time.Now() // sliding idle window
+	s.store.Put(sess)
+	return sess
+}
+
+func writeJSON(w http.ResponseWriter, v any, status ...int) {
+	w.Header().Set("Content-Type", "application/json")
+	if len(status) > 0 {
+		w.WriteHeader(status[0])
+	}
+	_ = json.NewEncoder(w).Encode(v)
 }
