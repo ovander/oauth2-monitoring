@@ -53,6 +53,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("/bff/callback", s.handleCallback)
 		mux.HandleFunc("/bff/session", s.handleSession)
 		mux.HandleFunc("/bff/logout", s.handleLogout)
+		mux.HandleFunc("/bff/elevate", s.handleElevate)
 	}
 	return mux
 }
