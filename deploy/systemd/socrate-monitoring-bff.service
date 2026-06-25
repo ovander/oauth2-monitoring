@@ -1,0 +1,41 @@
+[Unit]
+Description=Socrate Monitoring BFF (internal, fronts the admin API for the monitoring SPA)
+Documentation=https://github.com/ovander/oauth2-monitoring
+After=network-online.target socrate.service postgresql.service
+Wants=network-online.target
+# Phase 2+ uses Postgres for sessions; harmless to require it now.
+Requires=socrate.service
+
+[Service]
+Type=simple
+User=socrate
+Group=socrate
+EnvironmentFile=/etc/socrate/bff.env
+ExecStart=/usr/local/bin/socrate-monitoring-bff
+Restart=on-failure
+RestartSec=5
+
+# ── Hardening ────────────────────────────────────────────────────────────────
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target
