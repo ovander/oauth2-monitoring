@@ -17,15 +17,22 @@ func makeJWT(claims map[string]any) string {
 
 // phase2Harness wires a Server with mock OAuth + admin upstreams.
 type phase2Harness struct {
-	srv         *Server
-	adminAuth   string // Authorization header the admin upstream last saw
-	tokenForm   url.Values
-	accessToken string
+	srv           *Server
+	adminAuth     string // Authorization header the admin (proxy) upstream last saw
+	elevateAuth   string // Authorization header the elevate endpoint saw
+	tokenForm     url.Values
+	accessToken   string
+	elevatedToken string
+	elevateStatus int // status the mock elevate endpoint returns (default 200)
 }
 
 func newPhase2Harness(t *testing.T) *phase2Harness {
 	t.Helper()
-	h := &phase2Harness{accessToken: makeJWT(map[string]any{"sub": "u1", "email": "a@b.c", "name": "Admin A"})}
+	h := &phase2Harness{
+		accessToken:   makeJWT(map[string]any{"sub": "u1", "email": "a@b.c", "name": "Admin A"}),
+		elevatedToken: makeJWT(map[string]any{"sub": "u1", "auth_time": 1}),
+		elevateStatus: 200,
+	}
 
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
@@ -39,6 +46,16 @@ func newPhase2Harness(t *testing.T) *phase2Harness {
 	t.Cleanup(tokenSrv.Close)
 
 	adminSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/admin/elevate" {
+			h.elevateAuth = r.Header.Get("Authorization")
+			w.WriteHeader(h.elevateStatus)
+			if h.elevateStatus == http.StatusOK {
+				writeJSON(w, map[string]any{"access_token": h.elevatedToken, "token_type": "Bearer", "expires_in": 3600})
+			} else {
+				writeJSON(w, map[string]any{"error": "mfa_required"})
+			}
+			return
+		}
 		h.adminAuth = r.Header.Get("Authorization")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"ok":true}`))
@@ -180,6 +197,86 @@ func TestPhase2_PassThroughWithoutSession(t *testing.T) {
 	h.srv.Handler().ServeHTTP(rec, req)
 	if h.adminAuth != "Bearer browser-token" {
 		t.Fatalf("pass-through failed: %q", h.adminAuth)
+	}
+}
+
+func (h *phase2Harness) login(t *testing.T) (*http.Cookie, string) {
+	t.Helper()
+	login := h.do(http.MethodGet, "/bff/login", nil)
+	loc, _ := url.Parse(login.Header().Get("Location"))
+	cb := h.do(http.MethodGet, "/bff/callback?state="+loc.Query().Get("state")+"&code=c", nil)
+	cookie := sessionCookie(cb)
+	if cookie == nil {
+		t.Fatal("login failed: no session cookie")
+	}
+	sess := h.do(http.MethodGet, "/bff/session", cookie)
+	var sb struct {
+		CSRF string `json:"csrf"`
+	}
+	_ = json.Unmarshal(sess.Body.Bytes(), &sb)
+	return cookie, sb.CSRF
+}
+
+func (h *phase2Harness) post(target string, cookie *http.Cookie, csrf, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, target, strings.NewReader(body))
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	if csrf != "" {
+		req.Header.Set("X-CSRF-Token", csrf)
+	}
+	rec := httptest.NewRecorder()
+	h.srv.Handler().ServeHTTP(rec, req)
+	return rec
+}
+
+// Step-up: the BFF forwards the credentials with the SESSION's token and
+// captures the fresh access token into the session (nothing to the browser).
+func TestPhase2_Elevate_Success(t *testing.T) {
+	h := newPhase2Harness(t)
+	cookie, csrf := h.login(t)
+
+	rec := h.post("/bff/elevate", cookie, csrf, `{"password":"pw"}`)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("elevate: got %d, want 204 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if h.elevateAuth != "Bearer "+h.accessToken {
+		t.Fatalf("elevate used the wrong token: %q", h.elevateAuth)
+	}
+	// The session now carries the elevated token: the proxy injects it.
+	api := h.do(http.MethodGet, "/api/admin/x", cookie)
+	if api.Code != http.StatusOK || h.adminAuth != "Bearer "+h.elevatedToken {
+		t.Fatalf("session not upgraded to elevated token: %q", h.adminAuth)
+	}
+}
+
+func TestPhase2_Elevate_RequiresCSRF(t *testing.T) {
+	h := newPhase2Harness(t)
+	cookie, _ := h.login(t)
+	rec := h.post("/bff/elevate", cookie, "", `{"password":"pw"}`) // no X-CSRF-Token
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("got %d, want 403", rec.Code)
+	}
+}
+
+func TestPhase2_Elevate_RequiresSession(t *testing.T) {
+	h := newPhase2Harness(t)
+	rec := h.post("/bff/elevate", nil, "", `{"password":"pw"}`)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("got %d, want 401", rec.Code)
+	}
+}
+
+func TestPhase2_Elevate_ForwardsSocrateError(t *testing.T) {
+	h := newPhase2Harness(t)
+	h.elevateStatus = http.StatusUnauthorized
+	cookie, csrf := h.login(t)
+	rec := h.post("/bff/elevate", cookie, csrf, `{"password":"bad"}`)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("got %d, want 401", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "mfa_required") {
+		t.Fatalf("Socrate error not forwarded: %s", rec.Body.String())
 	}
 }
 

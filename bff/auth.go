@@ -1,6 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"crypto/subtle"
+	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -78,6 +82,78 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	s.clearSessionCookie(w)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// POST /bff/elevate — Tier-0 step-up. The browser re-presents the password (and
+// MFA, if enrolled); the BFF forwards it to Socrate's /api/admin/elevate using
+// the session's current access token, and captures the returned fresh-auth_time
+// access token into the session. No token is ever returned to the browser.
+func (s *Server) handleElevate(w http.ResponseWriter, r *http.Request) {
+	sess := s.currentSession(w, r)
+	if sess == nil {
+		writeJSON(w, map[string]any{"error": "unauthenticated"}, http.StatusUnauthorized)
+		return
+	}
+	if !s.checkCSRF(r, sess) {
+		writeJSON(w, map[string]any{"error": "invalid_csrf"}, http.StatusForbidden)
+		return
+	}
+
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+	endpoint := strings.TrimRight(s.cfg.AdminUpstream, "/") + "/api/admin/elevate"
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		writeJSON(w, map[string]any{"error": "elevation_failed"}, http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+sess.AccessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.oauth.http.Do(req)
+	if err != nil {
+		writeJSON(w, map[string]any{"error": "elevation_failed"}, http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	rb, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+
+	// Forward Socrate's error (invalid credentials, mfa_required, …) to the SPA.
+	if resp.StatusCode != http.StatusOK {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.StatusCode)
+		_, _ = w.Write(rb)
+		return
+	}
+
+	var lr struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		IDToken      string `json:"id_token"`
+		ExpiresIn    int    `json:"expires_in"`
+	}
+	_ = json.Unmarshal(rb, &lr)
+	if lr.AccessToken != "" {
+		sess.AccessToken = lr.AccessToken
+		if lr.RefreshToken != "" {
+			sess.RefreshToken = lr.RefreshToken
+		}
+		if lr.IDToken != "" {
+			sess.IDToken = lr.IDToken
+		}
+		if lr.ExpiresIn > 0 {
+			sess.AccessExpiry = time.Now().Add(time.Duration(lr.ExpiresIn) * time.Second)
+		}
+		s.store.Put(sess)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// checkCSRF enforces the double-submit token on state-changing BFF endpoints.
+// SameSite=Strict already blocks cross-site cookie attachment; this is
+// defense-in-depth. Constant-time compare against the session's CSRF token.
+func (s *Server) checkCSRF(r *http.Request, sess *Session) bool {
+	got := r.Header.Get("X-CSRF-Token")
+	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(sess.CSRF)) == 1
 }
 
 func (s *Server) setSessionCookie(w http.ResponseWriter, id string) {
