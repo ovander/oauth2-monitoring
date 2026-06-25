@@ -1,0 +1,43 @@
+[Unit]
+Description=Socrate OAuth 2.1 / OIDC server (OAuth :8080 public, admin API :8081 loopback)
+Documentation=https://github.com/ovander/go-oauth2
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=socrate
+Group=socrate
+EnvironmentFile=/etc/socrate/socrate.env
+ExecStart=/usr/local/bin/socrate
+Restart=on-failure
+RestartSec=5
+
+# ── Hardening (Tier-0 control plane) ─────────────────────────────────────────
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+# If Socrate persists anything to disk (it normally keeps keys in Postgres),
+# grant exactly that path here, e.g.:
+# ReadWritePaths=/var/lib/socrate
+
+[Install]
+WantedBy=multi-user.target

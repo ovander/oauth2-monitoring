@@ -1,0 +1,78 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Production Caddyfile — single VPS, vandermoten.eu
+#
+# Caddy is the ONLY public listener (ports 80/443). Everything else binds
+# loopback and is fronted here:
+#   socrate.vandermoten.eu     → OAuth 2.1 / OIDC server   (127.0.0.1:8080)
+#   admin.vandermoten.eu       → admin SPA + admin API hop  (static + 127.0.0.1:8081)
+#   monitoring.vandermoten.eu  → monitoring SPA + BFF       (static + 127.0.0.1:8090)
+#
+# The admin API (127.0.0.1:8081) has NO public subdomain of its own — it is the
+# Tier-0 control plane and is reachable only on-box (via the BFF, and via Caddy
+# for the admin SPA until that console gets its own BFF).
+# ─────────────────────────────────────────────────────────────────────────────
+
+{
+	email admin@vandermoten.eu
+	# Automatic HTTPS via Let's Encrypt is on by default.
+}
+
+# Reusable security-header snippet.
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		-Server
+	}
+}
+
+# ── Socrate OAuth 2.1 / OIDC server (public endpoints: authorize, token, jwks) ──
+socrate.vandermoten.eu {
+	encode zstd gzip
+	import security_headers
+	reverse_proxy 127.0.0.1:8080
+}
+
+# ── Monitoring console: SPA static assets + internal BFF ───────────────────────
+monitoring.vandermoten.eu {
+	encode zstd gzip
+	import security_headers
+	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+
+	# Auth + admin API → the BFF (the only client of the admin API for this app).
+	@bff path /bff/* /api/admin/*
+	reverse_proxy @bff 127.0.0.1:8090 {
+		flush_interval -1            # stream SSE (/api/admin/events/stream) immediately
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	# Built monitoring SPA.
+	handle {
+		root * /srv/monitoring/dist
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# ── Admin console SPA (separate frontend) ──────────────────────────────────────
+# NOTE: the admin SPA still holds tokens in the browser and calls the admin API
+# directly (through Caddy → loopback). It should get its own BFF (same pattern as
+# monitoring) so the admin console also stops carrying tokens. Until then, this
+# block keeps it working while the admin API stays loopback-only.
+admin.vandermoten.eu {
+	encode zstd gzip
+	import security_headers
+
+	@adminapi path /api/admin/*
+	reverse_proxy @adminapi 127.0.0.1:8081 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	handle {
+		root * /srv/admin/dist
+		try_files {path} /index.html
+		file_server
+	}
+}
