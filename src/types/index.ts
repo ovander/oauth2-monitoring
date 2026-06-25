@@ -337,6 +337,27 @@ export interface IPReputation {
   }[]
 }
 
+// Audit Integrity (RFC-007 tamper-evidence health of the security audit log)
+export interface AuditIntegrityViolation {
+  event_id: number
+  kind: 'hmac' | 'chain' | 'unknown'
+  details?: Record<string, any>
+  detected_at: string
+}
+
+export interface AuditIntegrity {
+  period: string
+  configured: boolean
+  status: 'verified' | 'violations_detected' | 'not_configured'
+  total_events: number
+  stamped_events: number
+  chained_events: number
+  coverage_percent: number
+  violations: number
+  last_violation_at?: string
+  recent_violations: AuditIntegrityViolation[]
+}
+
 // Admin Audit Logs (administrative action trail — distinct from security events)
 export interface AdminAuditLog {
   id: number
