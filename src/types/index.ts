@@ -407,11 +407,13 @@ export interface SSEEvent {
 }
 
 // Config
+// NOTE: there is intentionally no clientSecret. The monitoring console is a
+// PUBLIC OAuth 2.1 client and authenticates with PKCE only — a confidential
+// client secret must never be present in the browser.
 export interface MonitorConfig {
   adminUrl: string
   oauthUrl: string
   clientId: string
-  clientSecret: string
   redirectUri: string
   scopes: string[]
   setupCompleted: boolean

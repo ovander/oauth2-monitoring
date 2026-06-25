@@ -23,7 +23,6 @@ export const useAuthStore = defineStore('auth', () => {
     adminUrl: import.meta.env.VITE_ADMIN_URL || 'http://localhost:8081',
     oauthUrl: import.meta.env.VITE_OAUTH_URL || 'http://localhost:8080',
     clientId: import.meta.env.VITE_CLIENT_ID || '',
-    clientSecret: import.meta.env.VITE_CLIENT_SECRET || '',
     redirectUri: import.meta.env.VITE_REDIRECT_URI || `${window.location.origin}/callback`,
     scopes: (import.meta.env.VITE_SCOPES || 'openid,profile,email').split(','),
     setupCompleted: envConfigured
@@ -60,8 +59,9 @@ export const useAuthStore = defineStore('auth', () => {
       const stored = localStorage.getItem(STORAGE_KEY)
       if (stored) {
         const parsed = JSON.parse(stored)
-        // SEC-02: clientSecret is intentionally NOT stored — never restore it from storage
-        const { clientSecret: _omit, ...safe } = parsed
+        // Defensive: strip any legacy clientSecret left in storage by older
+        // builds — this client is public PKCE and never carries a secret.
+        const { clientSecret: _legacy, ...safe } = parsed
         config.value = { ...config.value, ...safe }
       }
     } catch (e) {
@@ -71,9 +71,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   function updateConfig(newConfig: Partial<MonitorConfig>) {
     config.value = { ...config.value, ...newConfig }
-    // SEC-02: strip clientSecret before persisting to localStorage
-    const { clientSecret: _secret, ...persistable } = config.value
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(persistable))
+    // config holds no secret (public PKCE client), so it is safe to persist as-is.
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(config.value))
   }
 
   function resetConfig() {
@@ -82,7 +81,6 @@ export const useAuthStore = defineStore('auth', () => {
       adminUrl: import.meta.env.VITE_ADMIN_URL || 'http://localhost:8081',
       oauthUrl: import.meta.env.VITE_OAUTH_URL || 'http://localhost:8080',
       clientId: import.meta.env.VITE_CLIENT_ID || '',
-      clientSecret: import.meta.env.VITE_CLIENT_SECRET || '',
       redirectUri: import.meta.env.VITE_REDIRECT_URI || `${window.location.origin}/callback`,
       scopes: (import.meta.env.VITE_SCOPES || 'openid,profile,email').split(','),
       setupCompleted: false
@@ -182,9 +180,7 @@ export const useAuthStore = defineStore('auth', () => {
         ...(codeVerifier && { code_verifier: codeVerifier })
       })
 
-      if (config.value.clientSecret) {
-        body.append('client_secret', config.value.clientSecret)
-      }
+      // Public PKCE client — no client_secret is ever sent.
 
       // In dev the Vite proxy forwards /oauth/token → oauthUrl (avoids cross-origin fetch)
       const tokenUrl = import.meta.env.DEV ? '/oauth/token' : `${config.value.oauthUrl}/oauth/token`
@@ -275,9 +271,7 @@ export const useAuthStore = defineStore('auth', () => {
       client_id: config.value.clientId
     })
 
-    if (config.value.clientSecret) {
-      body.append('client_secret', config.value.clientSecret)
-    }
+    // Public PKCE client — no client_secret is ever sent.
 
     const tokenUrl = import.meta.env.DEV ? '/oauth/token' : `${config.value.oauthUrl}/oauth/token`
     const response = await fetch(tokenUrl, {

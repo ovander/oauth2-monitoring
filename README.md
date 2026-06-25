@@ -51,7 +51,7 @@ After logging in, open **Settings** (cog icon in the sidebar) to configure your 
 | `VITE_SCOPES` | `openid,profile,email` | Comma-separated requested scopes |
 | `VITE_ADMIN_ROLES` | `admin,monitor_admin` | Comma-separated JWT roles that grant dashboard access |
 
-> **Security note:** Never set `VITE_CLIENT_SECRET` as a build-time variable. The client secret is entered in-memory via the post-login Settings page and is never written to `localStorage`.
+> **Security note:** The monitoring console is a **public OAuth 2.1 client** and authenticates with **PKCE only** — there is no client secret anywhere in the application (a confidential secret must never be present in a browser SPA).
 
 ---
 
@@ -113,7 +113,7 @@ The test suite covers:
 | Control | Status |
 |---------|--------|
 | CSRF state validation on OAuth callback | ✅ |
-| `clientSecret` excluded from `localStorage` | ✅ |
+| Public PKCE client — no client secret in the browser | ✅ |
 | Tokens in-memory only (not `sessionStorage`) | ✅ |
 | Role-based access control via JWT claims | ✅ |
 | Token refresh loop protection (`retried` flag) | ✅ |

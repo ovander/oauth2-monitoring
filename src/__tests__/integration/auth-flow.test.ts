@@ -135,25 +135,29 @@ describe('Logout', () => {
   })
 })
 
-// ─── clientSecret isolation ───────────────────────────────────────────────────
+// ─── Public PKCE client — no client secret in the browser ─────────────────────
 
-describe('Client secret isolation (SEC-02)', () => {
-  it('never persists clientSecret to localStorage', () => {
-    const authStore = useAuthStore()
-    authStore.updateConfig({
+describe('Public PKCE client — no client secret', () => {
+  it('does not restore a legacy clientSecret from localStorage', () => {
+    localStorage.setItem('oauth2_monitor_config', JSON.stringify({
       clientId: 'my-app',
-      clientSecret: 'super-secret',
+      clientSecret: 'legacy-secret',
       adminUrl: 'https://admin.example.com'
-    })
+    }))
+
+    const authStore = useAuthStore()
+    authStore.loadStoredConfig()
+
+    expect(authStore.config.clientId).toBe('my-app')
+    expect((authStore.config as Record<string, unknown>).clientSecret).toBeUndefined()
+  })
+
+  it('persisted config never contains a clientSecret', () => {
+    const authStore = useAuthStore()
+    authStore.updateConfig({ clientId: 'my-app', adminUrl: 'https://admin.example.com' })
 
     const stored = JSON.parse(localStorage.getItem('oauth2_monitor_config')!)
     expect(stored.clientSecret).toBeUndefined()
     expect(stored.clientId).toBe('my-app')
-  })
-
-  it('keeps clientSecret in-memory for the session', () => {
-    const authStore = useAuthStore()
-    authStore.updateConfig({ clientSecret: 'in-memory-secret' })
-    expect(authStore.config.clientSecret).toBe('in-memory-secret')
   })
 })

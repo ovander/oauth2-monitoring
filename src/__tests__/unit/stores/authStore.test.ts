@@ -30,14 +30,16 @@ describe('loadStoredConfig', () => {
     expect(store.config.setupCompleted).toBe(true)
   })
 
-  it('never restores clientSecret from localStorage (SEC-02)', () => {
+  it('never restores a legacy clientSecret from localStorage', () => {
     localStorage.setItem('oauth2_monitor_config', JSON.stringify({
       adminUrl: 'https://admin.example.com',
       clientSecret: 'supersecret'
     }))
     const store = useAuthStore()
-    // clientSecret should be from env (empty string in test env), not from storage
-    expect(store.config.clientSecret).toBe('')
+    // Public PKCE client — clientSecret is not a config field and a legacy
+    // value left in storage must never be loaded into the in-memory config.
+    expect((store.config as Record<string, unknown>).clientSecret).toBeUndefined()
+    expect(store.config.adminUrl).toBe('https://admin.example.com')
   })
 
   it('handles malformed JSON gracefully', () => {
@@ -58,9 +60,9 @@ describe('updateConfig', () => {
     expect(store.config.oauthUrl).toBe('http://localhost:8080') // unchanged
   })
 
-  it('persists config to localStorage (SEC-02: without clientSecret)', () => {
+  it('persists config to localStorage without any clientSecret', () => {
     const store = useAuthStore()
-    store.updateConfig({ adminUrl: 'https://new.example.com', clientSecret: 'mysecret' })
+    store.updateConfig({ adminUrl: 'https://new.example.com' })
 
     const stored = JSON.parse(localStorage.getItem('oauth2_monitor_config')!)
     expect(stored.adminUrl).toBe('https://new.example.com')
