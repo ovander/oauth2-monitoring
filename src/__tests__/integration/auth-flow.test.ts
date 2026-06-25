@@ -1,163 +1,48 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAuthStore } from '@/stores/authStore'
-import { useApi } from '@/composables/useApi'
-import { makeJwt, mockResponse, mockErrorResponse } from '@/__tests__/helpers'
+import { mockResponse } from '@/__tests__/helpers'
 
 beforeEach(() => {
   setActivePinia(createPinia())
-  localStorage.clear()
-  sessionStorage.clear()
   vi.restoreAllMocks()
 })
 
-// ─── Full PKCE Flow ───────────────────────────────────────────────────────────
-
-describe('Full PKCE OAuth2 Flow', () => {
-  it('generates authorization URL with state + PKCE verifier in sessionStorage', async () => {
-    const authStore = useAuthStore()
-    authStore.updateConfig({ clientId: 'test-client', oauthUrl: 'https://auth.example.com', setupCompleted: true })
-
-    const url = await authStore.getAuthorizationUrlAsync()
-
-    expect(sessionStorage.getItem('oauth_state')).toBeTruthy()
-    expect(sessionStorage.getItem('pkce_verifier')).toBeTruthy()
-
-    const parsed = new URL(url)
-    expect(parsed.searchParams.get('response_type')).toBe('code')
-    expect(parsed.searchParams.get('code_challenge_method')).toBe('S256')
-    expect(parsed.searchParams.get('state')).toBe(sessionStorage.getItem('oauth_state'))
-  })
-
-  it('exchanges code for tokens stored IN-MEMORY ONLY (SEC-04)', async () => {
-    const authStore = useAuthStore()
-    const accessToken = makeJwt({ sub: 'user-1', email: 'admin@test.com', roles: ['admin'] })
-
+// End-to-end of the cookie-session model: the SPA never holds a token — it
+// bootstraps identity from the BFF and delegates login/logout/step-up to it.
+describe('cookie-session auth flow', () => {
+  it('bootstraps an authenticated session from /bff/session and gates by role', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse({
-      access_token: accessToken,
-      refresh_token: 'refresh-abc',
-      expires_in: 3600,
-      token_type: 'Bearer'
+      authenticated: true,
+      user: { sub: 'u1', email: 'admin@socrate', roles: ['admin'] },
+      csrf: 'csrf-1'
     })))
 
-    await authStore.exchangeCode('auth-code')
+    const s = useAuthStore()
+    await s.fetchSession()
 
-    expect(authStore.isAuthenticated).toBe(true)
-    expect(authStore.getAccessToken()).toBe(accessToken)
-    expect(authStore.user?.email).toBe('admin@test.com')
-    expect(authStore.user?.roles).toContain('admin')
-
-    // Critical: tokens must NOT be in sessionStorage
-    expect(sessionStorage.getItem('monitor_auth_tokens')).toBeNull()
+    expect(s.isAuthenticated).toBe(true)
+    expect(s.isAdmin).toBe(true)
+    expect(s.csrf).toBe('csrf-1')
   })
 
-  it('pkce_verifier is cleared from sessionStorage after code exchange', async () => {
-    const authStore = useAuthStore()
-    sessionStorage.setItem('pkce_verifier', 'my-verifier')
-
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse({
-      access_token: makeJwt({ sub: 'u1' }),
-      expires_in: 3600,
-      token_type: 'Bearer'
-    })))
-
-    await authStore.exchangeCode('code')
-    expect(sessionStorage.getItem('pkce_verifier')).toBeNull()
-  })
-})
-
-// ─── After Authentication ─────────────────────────────────────────────────────
-
-describe('Post-authentication state', () => {
-  function loginUser(roles = ['admin']) {
-    const authStore = useAuthStore()
-    authStore.setTokens({
-      accessToken: makeJwt({ sub: 'u1', email: 'test@test.com', roles }),
-      refreshToken: 'rt-xyz',
-      expiresIn: 3600,
-      tokenType: 'Bearer'
-    })
-    return authStore
-  }
-
-  it('isAuthenticated is true after login', () => {
-    const authStore = loginUser()
-    expect(authStore.isAuthenticated).toBe(true)
+  it('an unauthenticated bootstrap leaves the user logged out', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse({ authenticated: false })))
+    const s = useAuthStore()
+    await s.fetchSession()
+    expect(s.isAuthenticated).toBe(false)
   })
 
-  it('isAdmin is true when user has admin role', () => {
-    const authStore = loginUser(['admin'])
-    expect(authStore.isAdmin).toBe(true)
-  })
+  it('logout clears the session', async () => {
+    const s = useAuthStore()
+    s.authenticated = true
+    s.user = { sub: 'u1', roles: ['admin'] }
+    s.csrf = 'csrf-1'
 
-  it('isAdmin is false for non-admin role', () => {
-    const authStore = loginUser(['viewer'])
-    expect(authStore.isAdmin).toBe(false)
-  })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })))
+    await s.logout()
 
-  it('fetchWithAuth includes Authorization header', async () => {
-    const authStore = loginUser()
-    const token = authStore.getAccessToken()!
-
-    let capturedAuth = ''
-    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url, opts) => {
-      capturedAuth = new Headers(opts.headers).get('Authorization') || ''
-      return Promise.resolve(mockResponse({ data: true }))
-    }))
-
-    const api = useApi()
-    await api.fetchWithAuth(`${authStore.config.adminUrl}/api/admin/dashboard/stats`)
-    expect(capturedAuth).toBe(`Bearer ${token}`)
-  })
-})
-
-// ─── Logout ───────────────────────────────────────────────────────────────────
-
-describe('Logout', () => {
-  it('clears all auth state from memory', () => {
-    const authStore = useAuthStore()
-    authStore.setTokens({ accessToken: makeJwt({ sub: 'u1' }), expiresIn: 3600, tokenType: 'Bearer' })
-    authStore.logout()
-
-    expect(authStore.isAuthenticated).toBe(false)
-    expect(authStore.user).toBeNull()
-    expect(authStore.getAccessToken()).toBeNull()
-    expect(authStore.tokenExpiresAt).toBeNull()
-  })
-
-  it('does not write token to sessionStorage on login and leaves nothing on logout', () => {
-    const authStore = useAuthStore()
-    authStore.setTokens({ accessToken: makeJwt({ sub: 'u1' }), expiresIn: 3600, tokenType: 'Bearer' })
-    expect(sessionStorage.getItem('monitor_auth_tokens')).toBeNull()
-
-    authStore.logout()
-    expect(sessionStorage.getItem('monitor_auth_tokens')).toBeNull()
-  })
-})
-
-// ─── Public PKCE client — no client secret in the browser ─────────────────────
-
-describe('Public PKCE client — no client secret', () => {
-  it('does not restore a legacy clientSecret from localStorage', () => {
-    localStorage.setItem('oauth2_monitor_config', JSON.stringify({
-      clientId: 'my-app',
-      clientSecret: 'legacy-secret',
-      adminUrl: 'https://admin.example.com'
-    }))
-
-    const authStore = useAuthStore()
-    authStore.loadStoredConfig()
-
-    expect(authStore.config.clientId).toBe('my-app')
-    expect((authStore.config as Record<string, unknown>).clientSecret).toBeUndefined()
-  })
-
-  it('persisted config never contains a clientSecret', () => {
-    const authStore = useAuthStore()
-    authStore.updateConfig({ clientId: 'my-app', adminUrl: 'https://admin.example.com' })
-
-    const stored = JSON.parse(localStorage.getItem('oauth2_monitor_config')!)
-    expect(stored.clientSecret).toBeUndefined()
-    expect(stored.clientId).toBe('my-app')
+    expect(s.isAuthenticated).toBe(false)
+    expect(s.csrf).toBeNull()
   })
 })

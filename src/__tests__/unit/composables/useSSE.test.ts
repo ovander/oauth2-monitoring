@@ -1,26 +1,18 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAuthStore } from '@/stores/authStore'
 import { useMonitorStore } from '@/stores/monitorStore'
-import { makeJwt } from '@/__tests__/helpers'
-
-// We test the SSE logic directly by importing and instantiating the composable
-// in an app context (needed for onUnmounted lifecycle)
-import { createApp, defineComponent, h } from 'vue'
-import { createPinia as createFreshPinia } from 'pinia'
 
 beforeEach(() => {
   setActivePinia(createPinia())
   vi.restoreAllMocks()
 })
 
-function loginStore() {
+// Cookie-session auth: the SPA holds no token. Mark the session authenticated.
+function authed() {
   const authStore = useAuthStore()
-  authStore.setTokens({
-    accessToken: makeJwt({ sub: 'u1', roles: ['admin'] }),
-    expiresIn: 3600,
-    tokenType: 'Bearer'
-  })
+  authStore.authenticated = true
+  authStore.user = { sub: 'u1', roles: ['admin'] }
   return authStore
 }
 
@@ -39,9 +31,7 @@ function makeStreamResponse(chunks: string[]): Response {
 }
 
 describe('useSSE — connect / disconnect', () => {
-  it('does not attempt connection when no access token', async () => {
-    // No login — authStore has no token
-    // vi.stubGlobal returns the original value, so keep the spy reference separately
+  it('does not attempt connection when not authenticated', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
     const { useSSE } = await import('@/composables/useSSE')
@@ -50,25 +40,27 @@ describe('useSSE — connect / disconnect', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('sends Authorization header when connecting', async () => {
-    loginStore()
-    const authStore = useAuthStore()
-    const token = authStore.getAccessToken()!
-
-    let capturedHeaders: Record<string, string> = {}
-    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url, opts) => {
-      capturedHeaders = opts.headers
+  it('connects same-origin with credentials and no Authorization header', async () => {
+    authed()
+    let capturedUrl = ''
+    let capturedOpts: any = {}
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url, opts) => {
+      capturedUrl = String(url)
+      capturedOpts = opts
       return Promise.resolve(makeStreamResponse(['event: heartbeat\ndata: ping\n\n']))
     }))
 
     const { useSSE } = await import('@/composables/useSSE')
     const sse = useSSE()
     await sse.connect()
-    expect(capturedHeaders['Authorization']).toBe(`Bearer ${token}`)
+
+    expect(capturedUrl).toBe('/api/admin/events/stream')
+    expect(capturedOpts.credentials).toBe('include')
+    expect(capturedOpts.headers?.Authorization).toBeUndefined()
   })
 
   it('sets isSSEConnected to true after successful connection', async () => {
-    loginStore()
+    authed()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
       makeStreamResponse(['event: heartbeat\ndata: ping\n\n'])
     ))
@@ -81,7 +73,7 @@ describe('useSSE — connect / disconnect', () => {
   })
 
   it('sets isSSEConnected to false after disconnect', async () => {
-    loginStore()
+    authed()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
       makeStreamResponse(['event: heartbeat\ndata: ping\n\n'])
     ))
@@ -96,7 +88,7 @@ describe('useSSE — connect / disconnect', () => {
 
 describe('useSSE — processEvent', () => {
   it('adds security_event to monitorStore.liveEvents', async () => {
-    loginStore()
+    authed()
     const secEvent = { id: 1, event_type: 'login_failed', severity: 'warning', ip_address: '1.2.3.4', success: false, created_at: '' }
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
       makeStreamResponse([`event: security_event\ndata: ${JSON.stringify(secEvent)}\n\n`])
@@ -111,7 +103,7 @@ describe('useSSE — processEvent', () => {
   })
 
   it('does not throw on malformed JSON data', async () => {
-    loginStore()
+    authed()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
       makeStreamResponse(['event: security_event\ndata: {invalid json\n\n'])
     ))

@@ -406,30 +406,7 @@ export interface SSEEvent {
   data: SecurityEvent | { timestamp: string } | TriggeredAlert
 }
 
-// Config
-// NOTE: there is intentionally no clientSecret. The monitoring console is a
-// PUBLIC OAuth 2.1 client and authenticates with PKCE only — a confidential
-// client secret must never be present in the browser.
-export interface MonitorConfig {
-  adminUrl: string
-  oauthUrl: string
-  clientId: string
-  redirectUri: string
-  scopes: string[]
-  setupCompleted: boolean
-}
-
-// Auth State
-export interface AuthTokens {
-  accessToken: string
-  refreshToken?: string
-  idToken?: string
-  expiresIn: number
-  tokenType: string
-  /** Top-level roles array returned by the server alongside the tokens (non-standard but common). */
-  rolesFromResponse?: string[]
-}
-
+// Auth — the SPA holds no OAuth tokens; identity comes from the BFF /bff/session.
 export interface UserInfo {
   sub: string
   name?: string

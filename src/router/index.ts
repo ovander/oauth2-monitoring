@@ -8,7 +8,6 @@ const log = useLogger('router')
 declare module 'vue-router' {
   interface RouteMeta {
     guest?: boolean          // unauthenticated access allowed
-    requiresSetup?: boolean  // setup wizard must be completed
     requiresAuth?: boolean   // any authenticated user with viewer or admin role
     requiresAdmin?: boolean  // full write access required (implies requiresAuth)
   }
@@ -18,9 +17,9 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     // ── Public / unauthenticated ───────────────────────────────────────────────
-    { path: '/setup',       name: 'setup',       component: () => import('@/views/SetupView.vue'),       meta: { guest: true } },
-    { path: '/login',       name: 'login',       component: () => import('@/views/LoginView.vue'),       meta: { guest: true, requiresSetup: true } },
-    { path: '/callback',    name: 'callback',    component: () => import('@/views/CallbackView.vue'),    meta: { guest: true } },
+    // Login is a sign-in screen that hands off to the BFF (/bff/login); the OAuth
+    // flow and callback are handled entirely server-side, so there is no /callback.
+    { path: '/login',       name: 'login',       component: () => import('@/views/LoginView.vue'),       meta: { guest: true } },
     // NOTE: no guest:true — authenticated users with wrong roles land here,
     // so marking it guest would cause an infinite redirect loop.
     { path: '/unauthorised', name: 'unauthorised', component: () => import('@/views/UnauthorisedView.vue') },
@@ -46,12 +45,6 @@ router.beforeEach((to, _from, next) => {
   const authStore = useAuthStore()
 
   log.debug(`navigating to "${String(to.name)}" | auth=${authStore.isAuthenticated} | roles=${JSON.stringify(authStore.user?.roles ?? [])}`)
-
-  // Setup required for login page
-  if (to.meta.requiresSetup && !authStore.isSetupCompleted) {
-    log.debug('setup not completed — redirecting to /setup')
-    return next('/setup')
-  }
 
   // Authentication + role checks
   if (to.meta.requiresAuth) {
@@ -79,18 +72,10 @@ router.beforeEach((to, _from, next) => {
     }
   }
 
-  // Redirect authenticated users away from login/setup/callback (guest-only pages)
-  // NOTE: /unauthorised is intentionally excluded — authenticated users with wrong
-  // roles should be allowed to stay there, not be bounced back to / endlessly.
-  const guestOnlyNames = ['login', 'setup', 'callback']
-  if (to.meta.guest && authStore.isAuthenticated && !guestOnlyNames.includes(String(to.name))) {
-    log.debug('authenticated user on guest page — redirecting to /')
+  // Authenticated users have no reason to sit on the login screen.
+  if (to.name === 'login' && authStore.isAuthenticated) {
+    log.debug('authenticated user on login page — redirecting to /')
     return next('/')
-  }
-
-  // Redirect to login if setup done but on setup page
-  if (to.name === 'setup' && authStore.isSetupCompleted) {
-    return next('/login')
   }
 
   next()

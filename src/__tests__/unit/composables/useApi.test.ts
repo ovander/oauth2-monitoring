@@ -4,7 +4,7 @@ import { useApi } from '@/composables/useApi'
 import { useAuthStore } from '@/stores/authStore'
 import { useMonitorStore } from '@/stores/monitorStore'
 import { useStepUpStore } from '@/stores/stepUpStore'
-import { makeJwt, mockResponse, mockErrorResponse } from '@/__tests__/helpers'
+import { mockResponse, mockErrorResponse } from '@/__tests__/helpers'
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -13,92 +13,70 @@ beforeEach(() => {
   vi.restoreAllMocks()
 })
 
-function loginStore(roles = ['admin']) {
+// Cookie-session auth: the SPA holds no token. Mark the session authenticated
+// and give it a CSRF token (as /bff/session would).
+function authed(roles = ['admin']) {
   const authStore = useAuthStore()
-  authStore.setTokens({
-    accessToken: makeJwt({ sub: 'u1', roles }),
-    refreshToken: 'rt-123',
-    expiresIn: 3600,
-    tokenType: 'Bearer'
-  })
+  authStore.authenticated = true
+  authStore.user = { sub: 'u1', roles }
+  authStore.csrf = 'csrf-1'
   return authStore
 }
 
 // ─── fetchWithAuth ────────────────────────────────────────────────────────────
 
 describe('fetchWithAuth', () => {
-  it('throws "Not authenticated" when no token is available', async () => {
-    const api = useApi()
-    await expect(api.fetchWithAuth('https://example.com/api')).rejects.toThrow('Not authenticated')
-  })
-
-  it('adds Authorization Bearer header and Content-Type', async () => {
-    loginStore()
-    const api = useApi()
-    const authStore = useAuthStore()
-    const token = authStore.getAccessToken()!
-
-    let capturedHeaders: Headers | undefined
-    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url, opts) => {
-      capturedHeaders = new Headers(opts.headers)
+  it('sends credentials and Content-Type, never an Authorization header', async () => {
+    authed()
+    let opts: any
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url, o) => {
+      opts = o
       return Promise.resolve(mockResponse({ ok: true }))
     }))
 
-    await api.fetchWithAuth('https://example.com/api/test')
-    expect(capturedHeaders?.get('Authorization')).toBe(`Bearer ${token}`)
-    expect(capturedHeaders?.get('Content-Type')).toBe('application/json')
+    const api = useApi()
+    await api.fetchWithAuth('/api/admin/test')
+
+    expect(opts.credentials).toBe('include')
+    const h = new Headers(opts.headers)
+    expect(h.get('Content-Type')).toBe('application/json')
+    expect(h.get('Authorization')).toBeNull()
   })
 
-  it('retries once with new token on 401 (SEC-05)', async () => {
-    loginStore()
-    const authStore = useAuthStore()
-    const newToken = makeJwt({ sub: 'u1', roles: ['admin'] })
-
-    let callCount = 0
-    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url, opts) => {
-      callCount++
-      if (callCount === 1) return Promise.resolve(mockErrorResponse(401))
-      // Simulate refresh endpoint
-      if (String(_url).includes('/oauth/token')) {
-        return Promise.resolve(mockResponse({ access_token: newToken, refresh_token: 'new-rt', expires_in: 3600, token_type: 'Bearer' }))
-      }
-      return Promise.resolve(mockResponse({ success: true }))
+  it('attaches X-CSRF-Token on mutating requests', async () => {
+    authed()
+    let opts: any
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url, o) => {
+      opts = o
+      return Promise.resolve(mockResponse({ ok: true }))
     }))
 
     const api = useApi()
-    const response = await api.fetchWithAuth(`${authStore.config.adminUrl}/api/test`)
-    expect(response.ok).toBe(true)
-    // fetch was called: original attempt + refresh + retry = 3
-    expect(callCount).toBeGreaterThanOrEqual(2)
+    await api.fetchWithAuth('/api/admin/x', { method: 'POST' })
+    expect(new Headers(opts.headers).get('X-CSRF-Token')).toBe('csrf-1')
   })
 
-  it('does NOT retry again if retry also gets 401 — no infinite recursion (SEC-05)', async () => {
-    loginStore()
-    let callCount = 0
-    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url) => {
-      callCount++
-      // Always return 401 (refresh also fails with 401 for token endpoint)
-      return Promise.resolve(mockErrorResponse(401))
+  it('does not attach CSRF on a GET', async () => {
+    authed()
+    let opts: any
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url, o) => {
+      opts = o
+      return Promise.resolve(mockResponse({ ok: true }))
     }))
 
     const api = useApi()
-    await expect(api.fetchWithAuth('https://example.com/api/test')).rejects.toThrow()
-    // Should not recurse infinitely — call count must be bounded
-    expect(callCount).toBeLessThan(10)
+    await api.fetchWithAuth('/api/admin/x')
+    expect(new Headers(opts.headers).get('X-CSRF-Token')).toBeNull()
   })
 
-  it('logs out and throws on refresh failure', async () => {
-    loginStore()
-    const authStore = useAuthStore()
-
-    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url) => {
-      // Both original and refresh calls fail
-      return Promise.resolve(mockErrorResponse(401))
-    }))
+  it('re-authenticates at the BFF on 401 and throws', async () => {
+    const authStore = authed()
+    const loginSpy = vi.spyOn(authStore, 'login').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockErrorResponse(401)))
 
     const api = useApi()
-    await expect(api.fetchWithAuth(`${authStore.config.adminUrl}/api/test`)).rejects.toThrow()
-    expect(authStore.isAuthenticated).toBe(false)
+    await expect(api.fetchWithAuth('/api/admin/x')).rejects.toThrow('Session expired')
+    expect(loginSpy).toHaveBeenCalled()
   })
 })
 
@@ -106,7 +84,7 @@ describe('fetchWithAuth', () => {
 
 describe('fetchDashboardStats', () => {
   it('calls correct URL and sets monitorStore.stats', async () => {
-    const authStore = loginStore()
+    authed()
     const monitorStore = useMonitorStore()
     const statsData = { total_users: 50, active_users: 30, total_apps: 3, active_apps: 2, today_logins: 10, today_signups: 1, failed_logins_24h: 2, locked_accounts: 0 }
 
@@ -125,7 +103,7 @@ describe('fetchDashboardStats', () => {
   })
 
   it('sets and clears loading state (stats)', async () => {
-    loginStore()
+    authed()
     const monitorStore = useMonitorStore()
     let loadingDuring = false
 
@@ -145,8 +123,8 @@ describe('fetchDashboardStats', () => {
 // ─── fetchWithAuth — step-up (elevation) ──────────────────────────────────────
 
 describe('fetchWithAuth — step-up', () => {
-  it('drives step-up on 403 elevation_required and retries once with the fresh token', async () => {
-    loginStore()
+  it('drives step-up on 403 elevation_required and retries once', async () => {
+    authed()
     const stepUp = useStepUpStore()
     const reqSpy = vi.spyOn(stepUp, 'request').mockResolvedValue()
 
@@ -158,7 +136,7 @@ describe('fetchWithAuth — step-up', () => {
     }))
 
     const api = useApi()
-    const res = await api.fetchWithAuth('https://example.com/api/admin/security/blocked-ips', { method: 'POST' })
+    const res = await api.fetchWithAuth('/api/admin/security/blocked-ips', { method: 'POST' })
 
     expect(reqSpy).toHaveBeenCalledOnce()
     expect(res.status).toBe(200)
@@ -166,7 +144,7 @@ describe('fetchWithAuth — step-up', () => {
   })
 
   it('does not loop forever if elevation_required persists after one elevation', async () => {
-    loginStore()
+    authed()
     const stepUp = useStepUpStore()
     vi.spyOn(stepUp, 'request').mockResolvedValue()
 
@@ -177,21 +155,21 @@ describe('fetchWithAuth — step-up', () => {
     }))
 
     const api = useApi()
-    const res = await api.fetchWithAuth('https://example.com/api/x', { method: 'POST' })
+    const res = await api.fetchWithAuth('/api/admin/x', { method: 'POST' })
 
     expect(res.status).toBe(403)
     expect(call).toBe(2)
   })
 
   it('passes through an unrelated 403 without prompting for step-up', async () => {
-    loginStore()
+    authed()
     const stepUp = useStepUpStore()
     const reqSpy = vi.spyOn(stepUp, 'request').mockResolvedValue()
 
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse({ error: 'forbidden' }, 403)))
 
     const api = useApi()
-    const res = await api.fetchWithAuth('https://example.com/api/x')
+    const res = await api.fetchWithAuth('/api/admin/x')
 
     expect(reqSpy).not.toHaveBeenCalled()
     expect(res.status).toBe(403)
@@ -202,7 +180,7 @@ describe('fetchWithAuth — step-up', () => {
 
 describe('fetchThreatMetrics', () => {
   it('sends the `period` query param Socrate expects (not time_range)', async () => {
-    loginStore()
+    authed()
     let calledUrl = ''
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url) => {
       calledUrl = String(url)
@@ -221,7 +199,7 @@ describe('fetchThreatMetrics', () => {
 
 describe('revokeUserTokens', () => {
   it('POSTs to the user revoke-tokens endpoint', async () => {
-    loginStore()
+    authed()
     let calledUrl = ''
     let calledMethod = ''
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url, opts) => {
@@ -242,7 +220,7 @@ describe('revokeUserTokens', () => {
 
 describe('fetchAuditLogs', () => {
   it('calls /api/admin/logs and populates the store', async () => {
-    loginStore()
+    authed()
     const monitorStore = useMonitorStore()
     const logsData = {
       logs: [{ id: 1, admin_id: 2, admin_email: 'a@b.c', action: 'unlock_user', target_type: 'user', created_at: '' }],
@@ -270,7 +248,7 @@ describe('fetchAuditLogs', () => {
 
 describe('fetchAuditIntegrity', () => {
   it('calls the audit-integrity endpoint with the period', async () => {
-    loginStore()
+    authed()
     let calledUrl = ''
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url) => {
       calledUrl = String(url)
@@ -294,7 +272,7 @@ describe('fetchAuditIntegrity', () => {
 
 describe('blockIP', () => {
   it('POSTs to blocked-ips endpoint and adds IP to store', async () => {
-    loginStore()
+    authed()
     const monitorStore = useMonitorStore()
     const newIp = { id: 99, ip_address: '10.0.0.1', reason: 'scanner', blocked_at: '', permanent: false }
 
@@ -309,7 +287,7 @@ describe('blockIP', () => {
 
 describe('unblockIP', () => {
   it('DELETEs from blocked-ips endpoint and removes IP from store', async () => {
-    loginStore()
+    authed()
     const monitorStore = useMonitorStore()
     monitorStore.setBlockedIPs([{ id: 5, ip_address: '5.5.5.5', reason: 'spam', blocked_at: '', permanent: false }])
 
@@ -326,7 +304,7 @@ describe('unblockIP', () => {
 
 describe('acknowledgeAlert', () => {
   it('POSTs to acknowledge endpoint and updates store', async () => {
-    loginStore()
+    authed()
     const monitorStore = useMonitorStore()
     monitorStore.setAlertHistory([
       { id: 7, rule_id: 1, rule_name: 'Test', severity: 'critical', message: 'msg', acknowledged: false, triggered_at: '' }

@@ -29,54 +29,51 @@ export function useApi() {
   const monitorStore = useMonitorStore()
   const stepUp = useStepUpStore()
 
-  // SEC-05: retried flag prevents infinite recursion on repeated 401s.
-  // elevated flag prevents infinite recursion on repeated 403 elevation_required.
+  // Cookie-session auth: requests are same-origin and carry the BFF session
+  // cookie (credentials: 'include'); the BFF injects the access token. No bearer
+  // token is ever held or sent by the SPA. State-changing requests carry the
+  // CSRF double-submit header. `elevated` prevents infinite step-up recursion.
   async function fetchWithAuth(
     url: string,
     options: RequestInit = {},
-    retried = false,
     elevated = false
   ): Promise<Response> {
-    const token = authStore.getAccessToken()
-    if (!token) {
-      throw new Error('Not authenticated')
-    }
+    const method = (options.method || 'GET').toUpperCase()
+    const mutating = method !== 'GET' && method !== 'HEAD'
 
     const response = await fetch(url, {
       ...options,
+      credentials: 'include',
       headers: {
-        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
+        ...(mutating ? authStore.csrfHeaders() : {}),
         ...options.headers
       }
     })
 
-    if (response.status === 401 && !retried) {
-      try {
-        await authStore.refreshAccessToken()
-        return fetchWithAuth(url, options, true, elevated)
-      } catch {
-        authStore.logout()
-        throw new Error('Session expired')
-      }
+    // No (or expired) session — re-authenticate at the BFF.
+    if (response.status === 401) {
+      authStore.login()
+      throw new Error('Session expired')
     }
 
     // Tier-0 step-up: a destructive endpoint requires a recent authentication.
-    // Drive the elevation dialog, then retry the original request once with the
-    // fresh-auth_time token. Concurrent calls coalesce onto one elevation.
+    // Drive the elevation dialog (which re-auths via the BFF), then retry once.
+    // Concurrent calls coalesce onto one elevation.
     if (response.status === 403 && !elevated) {
       const body = await response.clone().json().catch(() => null)
       if (body && body.error === 'elevation_required') {
         await stepUp.request()
-        return fetchWithAuth(url, options, retried, true)
+        return fetchWithAuth(url, options, true)
       }
     }
 
     return response
   }
 
+  // All admin-API calls are same-origin (Caddy → BFF); no host prefix.
   function getBaseUrl(): string {
-    return authStore.config.adminUrl
+    return ''
   }
 
   async function fetchDashboardStats(): Promise<DashboardStats> {
