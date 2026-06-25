@@ -1,0 +1,53 @@
+# Example Caddy config for the single-VPS Socrate deployment.
+#
+# Subdomains:
+#   socrate.vandermoten.eu     — Socrate OAuth 2.1 / OIDC server     (internal :8080)
+#   admin.vandermoten.eu       — Socrate admin SPA  (separate frontend)
+#   monitoring.vandermoten.eu  — Socrate monitoring SPA + its BFF
+#
+# The admin API (internal :8081) is NOT given its own public subdomain: the
+# monitoring BFF reaches it over localhost. (The admin SPA has the same
+# token-in-browser exposure as the monitoring SPA did and should get the same
+# BFF treatment — out of scope for this change.)
+
+# ── Monitoring console: SPA static + BFF (the only public entry for the console)
+monitoring.vandermoten.eu {
+	encode gzip
+
+	# Edge security headers + CSP live here now that Caddy serves the SPA static
+	# directly (they previously lived in the SPA's nginx.conf).
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# Auth + admin API → internal BFF. The BFF is the ONLY client of the admin API.
+	@bff path /bff/* /api/admin/*
+	reverse_proxy @bff 127.0.0.1:8090 {
+		flush_interval -1          # stream SSE (/api/admin/events/stream) immediately
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	# Built monitoring SPA assets.
+	handle {
+		root * /srv/monitoring/dist
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# ── Socrate OAuth 2.1 / OIDC server (authorize, token, jwks, userinfo).
+socrate.vandermoten.eu {
+	reverse_proxy 127.0.0.1:8080
+}
+
+# ── Admin SPA (separate frontend). Shown for completeness; its own BFF is a
+#    follow-up so the admin console also stops holding tokens in the browser.
+admin.vandermoten.eu {
+	# root * /srv/admin/dist
+	# file_server
+	reverse_proxy 127.0.0.1:8082
+}
