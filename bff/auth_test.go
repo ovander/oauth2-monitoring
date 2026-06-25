@@ -280,6 +280,38 @@ func TestPhase2_Elevate_ForwardsSocrateError(t *testing.T) {
 	}
 }
 
+// A session-backed mutation through the proxy requires a valid CSRF token;
+// safe methods (GET) do not.
+func TestPhase2_ProxyRequiresCSRFOnMutation(t *testing.T) {
+	h := newPhase2Harness(t)
+	cookie, csrf := h.login(t)
+
+	// POST without X-CSRF-Token → 403, never reaches the upstream.
+	h.adminAuth = ""
+	no := h.post("/api/admin/security/blocked-ips", cookie, "", `{}`)
+	if no.Code != http.StatusForbidden {
+		t.Fatalf("mutation w/o CSRF: got %d, want 403", no.Code)
+	}
+	if h.adminAuth != "" {
+		t.Fatal("request without CSRF should not reach the upstream")
+	}
+
+	// POST with the CSRF token → proxied, token injected.
+	yes := h.post("/api/admin/security/blocked-ips", cookie, csrf, `{}`)
+	if yes.Code != http.StatusOK {
+		t.Fatalf("mutation w/ CSRF: got %d, want 200", yes.Code)
+	}
+	if h.adminAuth != "Bearer "+h.accessToken {
+		t.Fatalf("token not injected: %q", h.adminAuth)
+	}
+
+	// A safe GET needs no CSRF token.
+	get := h.do(http.MethodGet, "/api/admin/dashboard/stats", cookie)
+	if get.Code != http.StatusOK {
+		t.Fatalf("GET should not require CSRF: got %d", get.Code)
+	}
+}
+
 func hasRole(roles []string, r string) bool {
 	for _, x := range roles {
 		if x == r {

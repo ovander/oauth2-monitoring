@@ -75,7 +75,7 @@ Wire it into Caddy with [`Caddyfile.example`](./Caddyfile.example).
 | `GET /bff/session` | `{authenticated, user, csrf}` for SPA bootstrap. |
 | `POST /bff/logout` | Destroy session, clear cookie. |
 | `POST /bff/elevate` | Tier-0 step-up: re-auth at Socrate with the session token; captures the fresh token into the session (CSRF-protected; nothing to the browser). |
-| `ANY /api/admin/**` | Allowlisted reverse proxy; injects the session token (Phase 2) or passes through (Phase 1), SSE-aware. |
+| `ANY /api/admin/**` | Allowlisted reverse proxy; injects the session token (Phase 2) or passes through (Phase 1), SSE-aware. Mutating methods require a valid `X-CSRF-Token`. |
 | anything else | `404` — the BFF is an allowlist, never an open proxy. |
 
 ## Roadmap
