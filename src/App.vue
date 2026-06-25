@@ -36,8 +36,8 @@ const navItems = [
   { name: 'Reports', route: 'reports', icon: 'pi-file' }
 ]
 
-function logout() {
-  authStore.logout()
+async function logout() {
+  await authStore.logout()
   router.push('/login')
 }
 </script>

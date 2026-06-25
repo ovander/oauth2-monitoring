@@ -18,29 +18,27 @@ export function useSSE() {
 
   async function connect() {
     if (isConnecting.value) return
-    
+
     disconnect()
     isConnecting.value = true
 
-    const token = authStore.getAccessToken()
-    if (!token) {
-      log.warn('no access token — aborting connect')
+    if (!authStore.isAuthenticated) {
+      log.warn('not authenticated — aborting SSE connect')
       isConnecting.value = false
       return
     }
 
-    // Use relative URL to go through Vite proxy in development
-    // In production, use the configured adminUrl
-    const baseUrl = import.meta.env.DEV ? '' : authStore.config.adminUrl
-    const url = `${baseUrl}/api/admin/events/stream`
-    
+    // Same-origin (Caddy → BFF); the session cookie carries auth, the BFF injects
+    // the access token. No Authorization header in the browser.
+    const url = `/api/admin/events/stream`
+
     try {
       abortController.value = new AbortController()
-      
+
       const response = await fetch(url, {
         method: 'GET',
+        credentials: 'include',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Accept': 'text/event-stream',
           'Cache-Control': 'no-cache'
         },

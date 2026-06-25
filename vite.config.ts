@@ -7,17 +7,27 @@ import { readFileSync } from 'node:fs'
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
 export default defineConfig(({ mode }) => {
-  // Dev-proxy upstreams are configurable and default to localhost — no
-  // deployment host is hardcoded in source. Override via .env(.local):
-  //   DEV_API_PROXY_TARGET=https://admin.example.com
-  //   DEV_OAUTH_PROXY_TARGET=https://auth.example.com
+  // In dev, proxy the cookie-auth surface (/bff and /api) to a locally-running
+  // monitoring BFF. Configurable; defaults to the BFF's default bind. Override:
+  //   DEV_BFF_TARGET=http://127.0.0.1:8090
   const env = loadEnv(mode, process.cwd(), '')
-  const apiTarget = env.DEV_API_PROXY_TARGET || env.VITE_ADMIN_URL || 'http://localhost:8081'
-  const oauthTarget = env.DEV_OAUTH_PROXY_TARGET || env.VITE_OAUTH_URL || 'http://localhost:8080'
+  const bffTarget = env.DEV_BFF_TARGET || 'http://127.0.0.1:8090'
+
+  const proxyEntry = {
+    target: bffTarget,
+    changeOrigin: true,
+    configure(proxy: any) {
+      proxy.on('proxyReq', (_req: any, origReq: any) => {
+        console.log(`[vite:proxy] → ${origReq.method} ${bffTarget}${origReq.url}`)
+      })
+      proxy.on('error', (err: any, origReq: any) => {
+        console.error(`[vite:proxy] ERROR on ${origReq.url}:`, err.message)
+      })
+    }
+  }
 
   return {
-  // Served under /monitoring/ in production, root in dev.
-  base: mode === 'production' ? '/monitoring/' : '/',
+  base: '/',
 
   // Inject build-time version constants — available as __APP_VERSION__ and
   // __APP_BUILD_DATE__ globally in all source files (declared in src/env.d.ts).
@@ -39,37 +49,9 @@ export default defineConfig(({ mode }) => {
     port: 5180,
     strictPort: true,
     proxy: {
-      '/api': {
-        target: apiTarget,
-        changeOrigin: true,
-        configure(proxy) {
-          proxy.on('proxyReq', (_proxyReq, origReq) => {
-            console.log(`[vite:proxy] → ${origReq.method} ${apiTarget}${origReq.url}`)
-          })
-          proxy.on('proxyRes', (proxyRes, origReq) => {
-            console.log(`[vite:proxy] ← ${proxyRes.statusCode} ${origReq.url}`)
-          })
-          proxy.on('error', (err, origReq) => {
-            console.error(`[vite:proxy] ERROR on ${origReq.url}:`, err.message)
-          })
-        }
-      },
-      // Proxy OAuth token endpoint to avoid cross-origin fetch issues in dev
-      '/oauth/token': {
-        target: oauthTarget,
-        changeOrigin: true,
-        configure(proxy) {
-          proxy.on('proxyReq', (_req, origReq) => {
-            console.log(`[vite:proxy] → POST ${oauthTarget}${origReq.url}`)
-          })
-          proxy.on('proxyRes', (proxyRes, origReq) => {
-            console.log(`[vite:proxy] ← ${proxyRes.statusCode} ${origReq.url}`)
-          })
-          proxy.on('error', (err, origReq) => {
-            console.error(`[vite:proxy] ERROR on ${origReq.url}:`, err.message)
-          })
-        }
-      }
+      // Both the cookie-auth BFF routes and the admin API go through the BFF.
+      '/bff': proxyEntry,
+      '/api': proxyEntry
     }
   }
   }
