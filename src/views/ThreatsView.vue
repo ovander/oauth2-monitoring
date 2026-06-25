@@ -21,6 +21,7 @@ import ProgressBar from 'primevue/progressbar'
 import Skeleton from 'primevue/skeleton'
 
 import type { SuspiciousIP, LockedAccount, IPReputation } from '@/types'
+import { OAUTH21_SIGNALS } from '@/types'
 
 const store = useMonitorStore()
 const api = useApi()
@@ -114,6 +115,19 @@ async function blockIP() {
     toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to block IP', life: 3000 })
   }
 }
+
+// OAuth 2.1 protocol & token-integrity detections. Counts are sourced from the
+// threat-metrics top-threats aggregate (failed events) for the selected period;
+// every signal is always listed so monitoring coverage is explicit even at zero.
+const oauth21Signals = computed(() => {
+  const counts = new Map<string, number>()
+  for (const t of store.threatMetrics?.top_threats ?? []) {
+    counts.set(t.type, t.count)
+  }
+  return OAUTH21_SIGNALS.map(s => ({ ...s, count: counts.get(s.event_type) ?? 0 }))
+})
+
+const oauth21ActiveCount = computed(() => oauth21Signals.value.filter(s => s.count > 0).length)
 
 function getRiskScoreColor(score: number): string {
   if (score >= 75) return 'var(--color-status-critical)'
@@ -231,6 +245,45 @@ onMounted(() => {
           {{ store.threatMetrics?.summary.unique_attackers || 0 }}
         </div>
         <div class="metric-label">Unique Attackers</div>
+      </div>
+    </div>
+
+    <!-- OAuth 2.1 Protocol & Token-Integrity Signals -->
+    <div class="panel mb-6">
+      <div class="panel-header">
+        <i class="pi pi-verified text-[var(--color-accent-cyan)]"></i>
+        OAuth 2.1 Protocol &amp; Token-Integrity Monitoring
+        <Tag
+          class="ml-auto"
+          :value="oauth21ActiveCount > 0 ? `${oauth21ActiveCount} active` : 'all clear'"
+          :severity="oauth21ActiveCount > 0 ? 'danger' : 'success'"
+        />
+      </div>
+      <p class="text-xs text-[var(--color-text-muted)] mb-3">
+        High-value protocol-abuse and token-theft detections specific to OAuth 2.1 / OIDC.
+        Counts reflect failed-event activity in the selected period.
+      </p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div
+          v-for="signal in oauth21Signals"
+          :key="signal.event_type"
+          class="p-3 rounded-lg border"
+          :class="signal.count > 0
+            ? 'bg-[var(--color-status-danger)]/10 border-[var(--color-status-danger)]/30'
+            : 'bg-[var(--color-surface-100)] border-[var(--color-border-subtle)]'"
+        >
+          <div class="flex items-center justify-between mb-1">
+            <span class="font-medium text-sm">{{ signal.label }}</span>
+            <Tag
+              :value="signal.count > 0 ? String(signal.count) : 'monitored'"
+              :severity="signal.count > 0 ? 'danger' : 'secondary'"
+            />
+          </div>
+          <p class="text-xs text-[var(--color-text-muted)] leading-snug">{{ signal.rationale }}</p>
+          <div class="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)] mt-1">
+            <i class="pi pi-book mr-1"></i>{{ signal.spec }}
+          </div>
+        </div>
       </div>
     </div>
 

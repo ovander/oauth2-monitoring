@@ -135,6 +135,7 @@ export function useSSE() {
             app_id: parsed.app_id,
             app_name: parsed.app_name,
             user_agent: parsed.user_agent,
+            correlation_id: parsed.correlation_id,
             details: parsed.details
           }
           monitorStore.addLiveEvent(ev)

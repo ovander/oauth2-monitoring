@@ -56,21 +56,24 @@ function showDetails(session: Session) {
   showDetailsDialog.value = true
 }
 
+// Sessions are derived from the audit log; Socrate revokes at the user level.
+// Revoking a session therefore revokes ALL of that user's tokens, signing them
+// out of every application at once.
 async function revokeSession(session: Session) {
   try {
-    await api.revokeSession(session.id)
-    toast.add({ severity: 'success', summary: 'Success', detail: 'Session revoked', life: 3000 })
+    await api.revokeUserTokens(session.user_id)
+    toast.add({ severity: 'success', summary: 'Success', detail: `All tokens revoked for ${session.user_email}`, life: 3000 })
     loadSessions()
     showDetailsDialog.value = false
   } catch (error) {
-    toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to revoke session', life: 3000 })
+    toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to revoke user tokens', life: 3000 })
   }
 }
 
 function confirmRevoke(event: Event, session: Session) {
   confirm.require({
     target: event.currentTarget as HTMLElement,
-    message: 'Revoke this session?',
+    message: `Revoke all tokens for ${session.user_email}? This signs them out of every app.`,
     icon: 'pi pi-exclamation-triangle',
     rejectClass: 'p-button-secondary p-button-text',
     acceptClass: 'p-button-danger',
@@ -80,19 +83,22 @@ function confirmRevoke(event: Event, session: Session) {
 
 async function revokeSelected() {
   if (selectedSessions.value.length === 0) return
-  
+
+  // De-duplicate by user — multiple sessions can belong to the same user, and
+  // revocation is per-user.
+  const userIds = [...new Set(selectedSessions.value.map(s => s.user_id))]
   try {
-    await Promise.all(selectedSessions.value.map(s => api.revokeSession(s.id)))
-    toast.add({ 
-      severity: 'success', 
-      summary: 'Success', 
-      detail: `${selectedSessions.value.length} sessions revoked`, 
-      life: 3000 
+    await Promise.all(userIds.map(id => api.revokeUserTokens(id)))
+    toast.add({
+      severity: 'success',
+      summary: 'Success',
+      detail: `Tokens revoked for ${userIds.length} user(s)`,
+      life: 3000
     })
     selectedSessions.value = []
     loadSessions()
   } catch (error) {
-    toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to revoke sessions', life: 3000 })
+    toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to revoke user tokens', life: 3000 })
   }
 }
 
@@ -151,12 +157,12 @@ onMounted(() => {
     <div class="flex items-center justify-between mb-6">
       <div>
         <h1 class="text-2xl font-bold">Active Sessions</h1>
-        <p class="text-[var(--color-text-muted)]">Manage user sessions across applications</p>
+        <p class="text-[var(--color-text-muted)]">Sessions inferred from recent activity. Revoking signs the user out of every app.</p>
       </div>
       <div class="flex items-center gap-3">
         <Button 
           v-if="selectedSessions.length > 0"
-          :label="`Revoke Selected (${selectedSessions.length})`"
+          :label="`Revoke User Tokens (${selectedSessions.length})`"
           icon="pi pi-ban"
           severity="danger"
           @click="revokeSelected"
@@ -299,7 +305,7 @@ onMounted(() => {
                 rounded
                 size="small"
                 @click="confirmRevoke($event, data)"
-                v-tooltip.top="'Revoke'"
+                v-tooltip.top="'Revoke user tokens'"
               />
             </div>
           </template>
@@ -389,12 +395,11 @@ onMounted(() => {
 
       <template #footer>
         <Button label="Close" severity="secondary" @click="showDetailsDialog = false" />
-        <Button 
-          label="Revoke Session" 
-          icon="pi pi-ban" 
+        <Button
+          label="Revoke User Tokens"
+          icon="pi pi-ban"
           severity="danger"
           @click="revokeSession(selectedSession!)"
-          :disabled="!!(selectedSession && isExpired(selectedSession.expires_at))"
         />
       </template>
     </Dialog>

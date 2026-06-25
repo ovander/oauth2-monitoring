@@ -141,6 +141,74 @@ describe('fetchDashboardStats', () => {
   })
 })
 
+// ─── fetchThreatMetrics ───────────────────────────────────────────────────────
+
+describe('fetchThreatMetrics', () => {
+  it('sends the `period` query param Socrate expects (not time_range)', async () => {
+    loginStore()
+    let calledUrl = ''
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url) => {
+      calledUrl = String(url)
+      return Promise.resolve(mockResponse({ time_range: '7d', summary: {}, top_threats: [], suspicious_ips: [], locked_accounts: [] }))
+    }))
+
+    const api = useApi()
+    await api.fetchThreatMetrics('7d')
+
+    expect(calledUrl).toContain('/api/admin/security/threats?period=7d')
+    expect(calledUrl).not.toContain('time_range')
+  })
+})
+
+// ─── revokeUserTokens ─────────────────────────────────────────────────────────
+
+describe('revokeUserTokens', () => {
+  it('POSTs to the user revoke-tokens endpoint', async () => {
+    loginStore()
+    let calledUrl = ''
+    let calledMethod = ''
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url, opts) => {
+      calledUrl = String(url)
+      calledMethod = opts?.method
+      return Promise.resolve(new Response(null, { status: 200 }))
+    }))
+
+    const api = useApi()
+    await api.revokeUserTokens(42)
+
+    expect(calledUrl).toContain('/api/admin/users/42/revoke-tokens')
+    expect(calledMethod).toBe('POST')
+  })
+})
+
+// ─── fetchAuditLogs ───────────────────────────────────────────────────────────
+
+describe('fetchAuditLogs', () => {
+  it('calls /api/admin/logs and populates the store', async () => {
+    loginStore()
+    const monitorStore = useMonitorStore()
+    const logsData = {
+      logs: [{ id: 1, admin_id: 2, admin_email: 'a@b.c', action: 'unlock_user', target_type: 'user', created_at: '' }],
+      total_count: 1,
+      page: 1,
+      page_size: 25
+    }
+    let calledUrl = ''
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url) => {
+      calledUrl = String(url)
+      return Promise.resolve(mockResponse(logsData))
+    }))
+
+    const api = useApi()
+    await api.fetchAuditLogs({ action: 'unlock_user' })
+
+    expect(calledUrl).toContain('/api/admin/logs?')
+    expect(calledUrl).toContain('action=unlock_user')
+    expect(monitorStore.auditLogs).toHaveLength(1)
+    expect(monitorStore.auditLogsTotal).toBe(1)
+  })
+})
+
 // ─── blockIP / unblockIP ──────────────────────────────────────────────────────
 
 describe('blockIP', () => {
