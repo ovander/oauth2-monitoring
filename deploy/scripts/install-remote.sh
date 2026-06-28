@@ -25,6 +25,9 @@ install_bin() {           # install_bin <name>
 # 1) Binaries (back up current first for rollback).
 install_bin socrate
 install_bin socrate-monitoring-bff
+# socrate-seed is a one-time CLI (first superadmin), not a service — ship it so
+# the toolchain-free VPS can run it, but it has no health check.
+install_bin socrate-seed
 
 # 2) Monitoring SPA static (atomic-ish: rsync with --delete).
 if [ -d "$artifacts/monitoring/dist" ]; then

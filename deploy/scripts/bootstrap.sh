@@ -16,6 +16,9 @@ echo "▶ creating directories…"
 install -d -o socrate -g socrate /srv/monitoring/dist /srv/admin/dist
 install -d -o root    -g root    /etc/socrate
 install -d -o root    -g root    /var/backups/socrate
+# Socrate signing keys (writable for rotation, KEYS_PATH) + optional GeoIP data.
+install -d -o socrate -g socrate -m 0700 /var/lib/socrate /var/lib/socrate/keys
+install -d -o socrate -g socrate -m 0750 /var/lib/socrate/data
 
 echo "▶ installing systemd units…"
 cp "$deploy_dir/systemd/socrate.service"                 /etc/systemd/system/
@@ -45,9 +48,14 @@ fi
 cat <<'EOF'
 
 Next:
-  1. Edit /etc/socrate/socrate.env and /etc/socrate/bff.env (secrets, DB URL).
+  1. Edit /etc/socrate/socrate.env and /etc/socrate/bff.env (secrets, DB URL, KEYS_PATH).
   2. Create the Postgres DB/user; run the go-oauth2 migration once (AUTO_MIGRATE=true, then back to false).
-  3. Deploy binaries + SPA:  ./deploy/scripts/push.sh   (from your workstation)
-  4. Enable services:        systemctl enable --now socrate socrate-monitoring-bff
-  5. Reload Caddy:           systemctl reload caddy
+  3. Generate RSA signing keys into /var/lib/socrate/keys (see README "Signing keys").
+  4. Deploy binaries + SPA:  ./deploy/scripts/push.sh   (from your workstation)
+  5. Create the first superadmin: run socrate-seed once on the VPS (see README "First superadmin").
+  6. Enable services:        systemctl enable --now socrate socrate-monitoring-bff
+  7. Reload Caddy:           systemctl reload caddy
+
+See deploy/README.md for the full deploy-day checklist, OAuth client registration,
+Postgres backup/restore, and the login smoke test.
 EOF

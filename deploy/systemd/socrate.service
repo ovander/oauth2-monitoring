@@ -35,9 +35,10 @@ SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
 CapabilityBoundingSet=
 AmbientCapabilities=
-# If Socrate persists anything to disk (it normally keeps keys in Postgres),
-# grant exactly that path here, e.g.:
-# ReadWritePaths=/var/lib/socrate
+# Socrate's RSA signing keys live on disk at KEYS_PATH and are rotated at
+# runtime, so that directory must be writable; everything else stays read-only
+# under ProtectSystem=strict. Keep this in sync with KEYS_PATH in socrate.env.
+ReadWritePaths=/var/lib/socrate/keys
 
 [Install]
 WantedBy=multi-user.target
