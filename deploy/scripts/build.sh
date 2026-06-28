@@ -34,13 +34,18 @@ echo "▶ building monitoring BFF…"
 ( cd "$mon_repo/bff" && CGO_ENABLED=0 GOOS="$target_os" GOARCH="$target_arch" \
     go build -trimpath -ldflags="-s -w" -o "$out/bin/socrate-monitoring-bff" . )
 
-# 3) Socrate backend binary (optional — only if the go-oauth2 checkout is present).
+# 3) Socrate backend + seed binaries (optional — only if the go-oauth2 checkout
+#    is present). The seed binary creates the first superadmin on the VPS, which
+#    has no Go toolchain, so it must be cross-built and shipped here.
 if [ -d "$go_oauth2_dir" ]; then
   echo "▶ building Socrate backend…"
   ( cd "$go_oauth2_dir" && CGO_ENABLED=0 GOOS="$target_os" GOARCH="$target_arch" \
       go build -trimpath -ldflags="-s -w" -o "$out/bin/socrate" ./cmd/server )
+  echo "▶ building Socrate seed (first-superadmin)…"
+  ( cd "$go_oauth2_dir" && CGO_ENABLED=0 GOOS="$target_os" GOARCH="$target_arch" \
+      go build -trimpath -ldflags="-s -w" -o "$out/bin/socrate-seed" ./cmd/seed )
 else
-  echo "⚠ go-oauth2 not found at $go_oauth2_dir — skipping Socrate binary (set GO_OAUTH2_DIR)"
+  echo "⚠ go-oauth2 not found at $go_oauth2_dir — skipping Socrate binaries (set GO_OAUTH2_DIR)"
 fi
 
 echo "✔ artifacts in $out"
