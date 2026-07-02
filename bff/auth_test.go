@@ -23,7 +23,8 @@ type phase2Harness struct {
 	tokenForm     url.Values
 	accessToken   string
 	elevatedToken string
-	elevateStatus int // status the mock elevate endpoint returns (default 200)
+	elevateStatus int      // status the mock elevate endpoint returns (default 200)
+	revoked       []string // tokens the mock /oauth/revoke endpoint received
 }
 
 func newPhase2Harness(t *testing.T) *phase2Harness {
@@ -36,6 +37,11 @@ func newPhase2Harness(t *testing.T) *phase2Harness {
 
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
+		if r.URL.Path == "/oauth/revoke" {
+			h.revoked = append(h.revoked, r.Form.Get("token"))
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		h.tokenForm = r.Form
 		writeJSON(w, map[string]any{
 			"access_token": h.accessToken, "refresh_token": "rt-1", "id_token": "id-1",
@@ -165,7 +171,7 @@ func TestPhase2_FullFlow(t *testing.T) {
 	}
 
 	// 5) logout → session gone.
-	out := h.do(http.MethodPost, "/bff/logout", cookie)
+	out := h.post("/bff/logout", cookie, sb.CSRF, "")
 	if out.Code != http.StatusNoContent {
 		t.Fatalf("logout: got %d", out.Code)
 	}
@@ -187,16 +193,102 @@ func TestPhase2_CallbackRejectsUnknownState(t *testing.T) {
 	}
 }
 
-// With auth enabled but no session cookie, the proxy passes the request through
-// (dual mode) — the browser's own Authorization header is forwarded.
-func TestPhase2_PassThroughWithoutSession(t *testing.T) {
+// With auth enabled and no session, the proxy fails closed: it returns 401 and
+// never forwards the request (nor the browser's Authorization header) upstream.
+func TestPhase2_FailClosedWithoutSession(t *testing.T) {
 	h := newPhase2Harness(t)
+	h.adminAuth = ""
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/x", nil)
+	req.Header.Set("Authorization", "Bearer browser-token")
+	rec := httptest.NewRecorder()
+	h.srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("no session: got %d, want 401", rec.Code)
+	}
+	if h.adminAuth != "" {
+		t.Fatalf("upstream reached without a session: %q", h.adminAuth)
+	}
+}
+
+// BFF_ALLOW_PASSTHROUGH restores the legacy dual-mode behaviour: with no session
+// the request is forwarded and the browser's own Authorization header is kept.
+func TestPhase2_PassThroughWhenFlagSet(t *testing.T) {
+	h := newPhase2Harness(t)
+	h.srv.cfg.AllowPassthrough = true
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/x", nil)
 	req.Header.Set("Authorization", "Bearer browser-token")
 	rec := httptest.NewRecorder()
 	h.srv.Handler().ServeHTTP(rec, req)
 	if h.adminAuth != "Bearer browser-token" {
 		t.Fatalf("pass-through failed: %q", h.adminAuth)
+	}
+}
+
+// A session-backed request replaces any inbound client Authorization header with
+// the session's token — an attacker-supplied bearer must never reach upstream.
+func TestPhase2_SessionStripsInboundAuth(t *testing.T) {
+	h := newPhase2Harness(t)
+	cookie, _ := h.login(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/x", nil)
+	req.AddCookie(cookie)
+	req.Header.Set("Authorization", "Bearer attacker")
+	rec := httptest.NewRecorder()
+	h.srv.Handler().ServeHTTP(rec, req)
+	if h.adminAuth != "Bearer "+h.accessToken {
+		t.Fatalf("inbound auth not replaced by session token: %q", h.adminAuth)
+	}
+}
+
+// Logout revokes the session's tokens upstream and enforces CSRF.
+func TestPhase2_LogoutRevokesTokens(t *testing.T) {
+	h := newPhase2Harness(t)
+	cookie, csrf := h.login(t)
+
+	rec := h.post("/bff/logout", cookie, csrf, "")
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("logout: got %d, want 204", rec.Code)
+	}
+	found := false
+	for _, tok := range h.revoked {
+		if tok == "rt-1" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("refresh token not revoked on logout: %v", h.revoked)
+	}
+}
+
+func TestPhase2_LogoutRequiresCSRF(t *testing.T) {
+	h := newPhase2Harness(t)
+	cookie, _ := h.login(t)
+	rec := h.post("/bff/logout", cookie, "", "") // no X-CSRF-Token
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("got %d, want 403", rec.Code)
+	}
+	if len(h.revoked) != 0 {
+		t.Fatalf("tokens revoked despite CSRF failure: %v", h.revoked)
+	}
+}
+
+func TestSanitizeReturnTo(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", "/"},
+		{"/dashboard", "/dashboard"},
+		{"/ok?x=1#f", "/ok?x=1#f"},
+		{"//evil.com", "/"},
+		{`/\evil.com`, "/"},
+		{`/\/evil.com`, "/"},
+		{`/foo\bar`, "/"},
+		{"https://evil.com", "/"},
+		{"relative", "/"},
+		{"/a\x00b", "/"},
+		{"/a\x7fb", "/"},
+	}
+	for _, c := range cases {
+		if got := sanitizeReturnTo(c.in); got != c.want {
+			t.Errorf("sanitizeReturnTo(%q) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }
 

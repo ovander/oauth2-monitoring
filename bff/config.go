@@ -55,6 +55,13 @@ type Config struct {
 	// CookieSecure controls the Secure attribute (and the __Host- cookie name).
 	// Default true; set false only for local HTTP development.
 	CookieSecure bool
+
+	// AllowPassthrough restores the legacy Phase-1 behaviour of the proxy when
+	// auth is enabled: with no valid session the request is forwarded upstream
+	// unchanged (including the client's own Authorization header) instead of
+	// being rejected. Default false (fail-closed); set BFF_ALLOW_PASSTHROUGH
+	// only for a controlled migration window.
+	AllowPassthrough bool
 }
 
 // AuthEnabled reports whether server-side OAuth / sessions are configured.
@@ -77,18 +84,19 @@ func (c *Config) RedirectURI() string {
 // LoadConfig reads configuration from the environment with safe defaults.
 func LoadConfig() (*Config, error) {
 	c := &Config{
-		ListenAddr:      getenv("BFF_LISTEN_ADDR", "127.0.0.1:8090"),
-		AdminUpstream:   getenv("BFF_ADMIN_UPSTREAM", "http://127.0.0.1:8081"),
-		OAuthUpstream:   getenv("BFF_OAUTH_UPSTREAM", "http://127.0.0.1:8080"),
-		OAuthPublicURL:  getenv("BFF_OAUTH_PUBLIC_URL", ""),
-		PublicOrigin:    getenv("BFF_PUBLIC_ORIGIN", ""),
-		ClientID:        getenv("BFF_CLIENT_ID", ""),
-		ClientSecret:    getenv("BFF_CLIENT_SECRET", ""),
-		Scopes:          getenv("BFF_SCOPES", "openid profile email"),
-		SessionIdle:     getdur("BFF_SESSION_IDLE", 30*time.Minute),
-		SessionAbsolute: getdur("BFF_SESSION_ABSOLUTE", 8*time.Hour),
-		SessionDSN:      getenv("BFF_SESSION_DSN", ""),
-		CookieSecure:    getbool("BFF_COOKIE_SECURE", true),
+		ListenAddr:       getenv("BFF_LISTEN_ADDR", "127.0.0.1:8090"),
+		AdminUpstream:    getenv("BFF_ADMIN_UPSTREAM", "http://127.0.0.1:8081"),
+		OAuthUpstream:    getenv("BFF_OAUTH_UPSTREAM", "http://127.0.0.1:8080"),
+		OAuthPublicURL:   getenv("BFF_OAUTH_PUBLIC_URL", ""),
+		PublicOrigin:     getenv("BFF_PUBLIC_ORIGIN", ""),
+		ClientID:         getenv("BFF_CLIENT_ID", ""),
+		ClientSecret:     getenv("BFF_CLIENT_SECRET", ""),
+		Scopes:           getenv("BFF_SCOPES", "openid profile email"),
+		SessionIdle:      getdur("BFF_SESSION_IDLE", 30*time.Minute),
+		SessionAbsolute:  getdur("BFF_SESSION_ABSOLUTE", 8*time.Hour),
+		SessionDSN:       getenv("BFF_SESSION_DSN", ""),
+		CookieSecure:     getbool("BFF_COOKIE_SECURE", true),
+		AllowPassthrough: getbool("BFF_ALLOW_PASSTHROUGH", false),
 	}
 
 	u, err := url.Parse(c.AdminUpstream)

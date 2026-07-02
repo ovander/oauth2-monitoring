@@ -17,6 +17,12 @@ type UserInfo struct {
 // only ever holds the opaque session id (in an HttpOnly cookie); the tokens
 // never leave the server.
 type Session struct {
+	// mu guards the mutable fields below. The in-memory store hands out the live
+	// *Session pointer, so concurrent requests can read/mutate the same record;
+	// every access after Get must hold this lock. It is unexported and therefore
+	// ignored by the Postgres store's json (de)serialization.
+	mu sync.Mutex
+
 	ID           string
 	AccessToken  string
 	RefreshToken string
@@ -26,6 +32,78 @@ type Session struct {
 	CSRF         string
 	Created      time.Time
 	LastSeen     time.Time
+}
+
+// touch updates LastSeen (the sliding idle window) under the session lock.
+func (s *Session) touch(now time.Time) {
+	s.mu.Lock()
+	s.LastSeen = now
+	s.mu.Unlock()
+}
+
+// bearer returns the Authorization header value for the session's access token.
+func (s *Session) bearer() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return "Bearer " + s.AccessToken
+}
+
+// csrfToken returns the session's CSRF token under the lock.
+func (s *Session) csrfToken() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.CSRF
+}
+
+// snapshotUser returns a copy of the session's identity under the lock.
+func (s *Session) snapshotUser() UserInfo {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.User
+}
+
+// tokens returns the refresh and access tokens under the lock (for revocation).
+func (s *Session) tokens() (refresh, access string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.RefreshToken, s.AccessToken
+}
+
+// expiry returns the access-token expiry under the lock.
+func (s *Session) expiry() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.AccessExpiry
+}
+
+// refreshInfo returns the fields ensureFresh needs to decide on a refresh.
+func (s *Session) refreshInfo() (refresh string, expiry time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.RefreshToken, s.AccessExpiry
+}
+
+// applyTokens atomically updates the session's tokens after a refresh or
+// elevation. Empty refresh/id tokens are preserved (the issuer may omit them).
+func (s *Session) applyTokens(access, refresh, id string, expiry time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.AccessToken = access
+	if refresh != "" {
+		s.RefreshToken = refresh
+	}
+	if id != "" {
+		s.IDToken = id
+	}
+	s.AccessExpiry = expiry
+}
+
+// expired reports whether the session is past its idle or absolute lifetime.
+// The time reads are guarded by the session lock (LastSeen is mutated by touch).
+func (s *Session) expired(now time.Time, idle, absolute time.Duration) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return now.Sub(s.Created) > absolute || now.Sub(s.LastSeen) > idle
 }
 
 // loginState holds the short-lived pre-authentication data for one in-flight
@@ -103,8 +181,7 @@ func (m *MemorySessionStore) Get(id string) (*Session, bool) {
 	if !ok {
 		return nil, false
 	}
-	now := m.now()
-	if now.Sub(s.Created) > m.absolute || now.Sub(s.LastSeen) > m.idle {
+	if s.expired(m.now(), m.idle, m.absolute) {
 		m.Delete(id)
 		return nil, false
 	}
@@ -124,7 +201,7 @@ func (m *MemorySessionStore) sweep() {
 	defer m.mu.Unlock()
 	now := m.now()
 	for id, s := range m.sessions {
-		if now.Sub(s.Created) > m.absolute || now.Sub(s.LastSeen) > m.idle {
+		if s.expired(now, m.idle, m.absolute) {
 			delete(m.sessions, id)
 		}
 	}

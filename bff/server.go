@@ -104,17 +104,29 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 // top of SameSite=Strict).
 func (s *Server) proxyAdmin(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.AuthEnabled() && s.store != nil {
-		if sess := s.currentSession(w, r); sess != nil {
-			if isMutating(r.Method) && !s.checkCSRF(r, sess) {
-				writeJSON(w, map[string]any{"error": "invalid_csrf"}, http.StatusForbidden)
+		sess := s.currentSession(w, r)
+		if sess == nil {
+			// Fail closed: with auth enabled and no valid session we must not
+			// forward the request (nor any client-supplied Authorization header).
+			// Legacy pass-through is opt-in via BFF_ALLOW_PASSTHROUGH only.
+			if !s.cfg.AllowPassthrough {
+				writeJSON(w, map[string]any{"error": "unauthorized"}, http.StatusUnauthorized)
 				return
 			}
-			if err := s.ensureFresh(r.Context(), sess); err != nil {
-				writeJSON(w, map[string]any{"error": "session expired"}, http.StatusUnauthorized)
-				return
-			}
-			r.Header.Set("Authorization", "Bearer "+sess.AccessToken)
+			s.proxy.ServeHTTP(w, r)
+			return
 		}
+		if isMutating(r.Method) && !s.checkCSRF(r, sess) {
+			writeJSON(w, map[string]any{"error": "invalid_csrf"}, http.StatusForbidden)
+			return
+		}
+		if err := s.ensureFresh(r.Context(), sess); err != nil {
+			writeJSON(w, map[string]any{"error": "session expired"}, http.StatusUnauthorized)
+			return
+		}
+		// Strip any inbound client Authorization and inject the session's token.
+		r.Header.Del("Authorization")
+		r.Header.Set("Authorization", sess.bearer())
 	}
 	s.proxy.ServeHTTP(w, r)
 }
@@ -132,22 +144,17 @@ func isMutating(method string) bool {
 // ensureFresh proactively refreshes a session's access token shortly before it
 // expires. A refresh failure is terminal for the request (the SPA re-logs in).
 func (s *Server) ensureFresh(ctx context.Context, sess *Session) error {
-	if sess.RefreshToken == "" || time.Until(sess.AccessExpiry) > 30*time.Second {
+	refresh, expiry := sess.refreshInfo()
+	if refresh == "" || time.Until(expiry) > 30*time.Second {
 		return nil
 	}
-	tr, err := s.oauth.refresh(ctx, sess.RefreshToken)
+	tr, err := s.oauth.refresh(ctx, refresh)
 	if err != nil {
 		s.store.Delete(sess.ID)
 		return err
 	}
-	sess.AccessToken = tr.AccessToken
-	if tr.RefreshToken != "" {
-		sess.RefreshToken = tr.RefreshToken
-	}
-	if tr.IDToken != "" {
-		sess.IDToken = tr.IDToken
-	}
-	sess.AccessExpiry = time.Now().Add(time.Duration(tr.ExpiresIn) * time.Second)
+	sess.applyTokens(tr.AccessToken, tr.RefreshToken, tr.IDToken,
+		time.Now().Add(time.Duration(tr.ExpiresIn)*time.Second))
 	s.store.Put(sess)
 	return nil
 }
@@ -161,7 +168,7 @@ func (s *Server) currentSession(_ http.ResponseWriter, r *http.Request) *Session
 	if !ok {
 		return nil
 	}
-	sess.LastSeen = time.Now() // sliding idle window
+	sess.touch(time.Now()) // sliding idle window
 	s.store.Put(sess)
 	return sess
 }

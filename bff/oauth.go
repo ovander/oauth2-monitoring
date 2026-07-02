@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -115,6 +116,42 @@ func (o *oauthClient) token(ctx context.Context, form url.Values) (*tokenRespons
 		return nil, fmt.Errorf("token endpoint: %s", msg)
 	}
 	return &tr, nil
+}
+
+// revoke best-effort revokes a token at the issuer's RFC 7009 /oauth/revoke
+// endpoint using the BFF's confidential client credentials. An empty token is a
+// no-op. token_type_hint is advisory. The caller logs and continues on error.
+func (o *oauthClient) revoke(ctx context.Context, token, hint string) error {
+	if token == "" {
+		return nil
+	}
+	form := url.Values{
+		"token":     {token},
+		"client_id": {o.cfg.ClientID},
+	}
+	if hint != "" {
+		form.Set("token_type_hint", hint)
+	}
+	if o.cfg.ClientSecret != "" {
+		form.Set("client_secret", o.cfg.ClientSecret)
+	}
+	endpoint := strings.TrimRight(o.cfg.OAuthUpstream, "/") + "/oauth/revoke"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := o.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("revoke endpoint: %s", resp.Status)
+	}
+	return nil
 }
 
 // userFromToken builds the session's UserInfo from the token response: identity
