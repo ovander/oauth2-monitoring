@@ -56,9 +56,9 @@ func TestSessionJSONRoundTrip(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if out.AccessToken != "at" || out.RefreshToken != "rt" || out.User.Sub != "u1" || out.CSRF != "csrf-1" {
-		t.Fatalf("round-trip mismatch: %+v", out)
+		t.Fatalf("round-trip mismatch: %+v", &out)
 	}
 	if !out.AccessExpiry.Equal(in.AccessExpiry) || len(out.User.Roles) != 2 {
-		t.Fatalf("round-trip lost fields: %+v", out)
+		t.Fatalf("round-trip lost fields: %+v", &out)
 	}
 }
