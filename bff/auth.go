@@ -16,6 +16,9 @@ import (
 // GET /bff/login — start Authorization Code + PKCE. Stores state + verifier
 // server-side and redirects the browser to Socrate's authorize endpoint.
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if s.rateLimited(w, r, s.loginLimiter) {
+		return
+	}
 	state := randToken()
 	verifier := randToken()
 	s.store.PutLogin(state, loginState{
@@ -115,6 +118,9 @@ func (s *Server) revokeSessionTokens(ctx context.Context, sess *Session) {
 // the session's current access token, and captures the returned fresh-auth_time
 // access token into the session. No token is ever returned to the browser.
 func (s *Server) handleElevate(w http.ResponseWriter, r *http.Request) {
+	if s.rateLimited(w, r, s.elevateLimiter) {
+		return
+	}
 	sess := s.currentSession(w, r)
 	if sess == nil {
 		writeJSON(w, map[string]any{"error": "unauthenticated"}, http.StatusUnauthorized)

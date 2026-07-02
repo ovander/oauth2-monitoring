@@ -25,6 +25,9 @@ type Server struct {
 	proxy *httputil.ReverseProxy
 	store SessionStore
 	oauth *oauthClient
+
+	loginLimiter   *rateLimiter // per-IP budget for /bff/login
+	elevateLimiter *rateLimiter // per-IP budget for /bff/elevate
 }
 
 // NewServer builds a Server with the default (in-memory) session store.
@@ -50,6 +53,8 @@ func NewServerWithStore(cfg *Config, store SessionStore) *Server {
 		}
 		s.store = store
 		s.oauth = newOAuthClient(cfg)
+		s.loginLimiter = newRateLimiter(cfg.LoginRate, rateWindow)
+		s.elevateLimiter = newRateLimiter(cfg.ElevateRate, rateWindow)
 	}
 	return s
 }
@@ -71,11 +76,12 @@ func (s *Server) Handler() http.Handler {
 // sweepable is implemented by stores that prune expired rows in bulk.
 type sweepable interface{ sweep() }
 
-// StartSweeper periodically prunes expired sessions/login-state until ctx is
-// cancelled. No-op for stores that don't implement sweep().
+// StartSweeper periodically prunes expired sessions/login-state and the per-IP
+// rate-limiter windows until ctx is cancelled. It is a no-op only when there is
+// nothing to sweep (Phase 1: no sweepable store and no limiters).
 func (s *Server) StartSweeper(ctx context.Context) {
-	sw, ok := s.store.(sweepable)
-	if !ok {
+	sw, _ := s.store.(sweepable)
+	if sw == nil && s.loginLimiter == nil && s.elevateLimiter == nil {
 		return
 	}
 	go func() {
@@ -86,7 +92,15 @@ func (s *Server) StartSweeper(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				sw.sweep()
+				if sw != nil {
+					sw.sweep()
+				}
+				if s.loginLimiter != nil {
+					s.loginLimiter.sweep()
+				}
+				if s.elevateLimiter != nil {
+					s.elevateLimiter.sweep()
+				}
 			}
 		}
 	}()
