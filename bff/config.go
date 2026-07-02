@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -52,6 +53,12 @@ type Config struct {
 	// multi-instance). Empty uses the in-memory store (single instance).
 	SessionDSN string
 
+	// Per-IP request budgets (per rateWindow) for the credential-bearing
+	// endpoints. LoginRate guards /bff/login; ElevateRate guards /bff/elevate
+	// (password + MFA brute force). A value <= 0 disables that limiter.
+	LoginRate   int
+	ElevateRate int
+
 	// CookieSecure controls the Secure attribute (and the __Host- cookie name).
 	// Default true; set false only for local HTTP development.
 	CookieSecure bool
@@ -97,6 +104,8 @@ func LoadConfig() (*Config, error) {
 		SessionDSN:       getenv("BFF_SESSION_DSN", ""),
 		CookieSecure:     getbool("BFF_COOKIE_SECURE", true),
 		AllowPassthrough: getbool("BFF_ALLOW_PASSTHROUGH", false),
+		LoginRate:        getint("BFF_LOGIN_RATE", 10),
+		ElevateRate:      getint("BFF_ELEVATE_RATE", 5),
 	}
 
 	u, err := url.Parse(c.AdminUpstream)
@@ -129,6 +138,15 @@ func getdur(key string, def time.Duration) time.Duration {
 	if v := os.Getenv(key); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			return d
+		}
+	}
+	return def
+}
+
+func getint(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
 		}
 	}
 	return def

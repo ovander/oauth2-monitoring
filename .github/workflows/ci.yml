@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs for the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # BFF (Go) — vet + race-enabled tests
+  # ──────────────────────────────────────────────────────────────────────────
+  bff-tests:
+    name: BFF tests (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: bff/go.sum
+
+      - name: Vet + race-enabled tests
+        run: go vet ./... && go test -race ./...
+        working-directory: bff
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # SPA — unit tests + production build
+  # ──────────────────────────────────────────────────────────────────────────
+  spa:
+    name: SPA unit tests & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm run test:run
+
+      - name: Build (production)
+        run: npm run build
