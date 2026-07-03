@@ -7,6 +7,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ovander/backendkit/bff"
+	"github.com/ovander/backendkit/socrate"
 )
 
 func testServer(t *testing.T, upstream string) *Server {
@@ -75,10 +78,8 @@ func TestNonAllowlistedPathIs404(t *testing.T) {
 func TestSessionConcurrentGetAndMutate(t *testing.T) {
 	store := NewMemorySessionStore(time.Hour, time.Hour)
 	now := time.Now()
-	store.Put(&Session{
-		ID: "s1", AccessToken: "a", RefreshToken: "r", CSRF: "c",
-		AccessExpiry: now.Add(time.Hour), Created: now, LastSeen: now,
-	})
+	ts := &socrate.TokenSet{AccessToken: "a", RefreshToken: "r", ExpiresIn: 3600}
+	store.Put(bff.NewSession("s1", "c", ts, bff.UserInfo{}, now))
 
 	var wg sync.WaitGroup
 	for i := 0; i < 64; i++ {
@@ -90,12 +91,12 @@ func TestSessionConcurrentGetAndMutate(t *testing.T) {
 				return
 			}
 			// Mix of the post-Get accesses the handlers perform.
-			sess.touch(time.Now())
-			_ = sess.bearer()
-			_ = sess.csrfToken()
-			_ = sess.snapshotUser()
-			_, _ = sess.tokens()
-			sess.applyTokens("a2", "r2", "id2", time.Now().Add(time.Hour))
+			sess.Touch(time.Now())
+			_ = "Bearer " + sess.AccessToken()
+			_ = sess.CSRF()
+			_ = sess.User()
+			_, _ = sess.RefreshToken(), sess.AccessToken()
+			sess.SetTokens(&socrate.TokenSet{AccessToken: "a2", RefreshToken: "r2", IDToken: "id2", ExpiresIn: 3600}, time.Now())
 			store.Put(sess)
 		}(i)
 	}

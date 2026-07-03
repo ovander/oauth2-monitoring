@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"time"
+
+	"github.com/ovander/backendkit/bff"
 )
 
 // adminPrefix is the only proxied path family. The BFF is an allowlist, never an
@@ -21,10 +23,11 @@ const adminPrefix = "/api/admin/"
 //     the proxy injects the session's access token. With no session it falls back
 //     to pass-through, so the server can deploy before the SPA switches to cookies.
 type Server struct {
-	cfg   *Config
-	proxy *httputil.ReverseProxy
-	store SessionStore
-	oauth *oauthClient
+	cfg     *Config
+	proxy   *httputil.ReverseProxy
+	store   SessionStore
+	oauth   *oauthClient
+	gateway *bff.Gateway
 
 	loginLimiter   *rateLimiter // per-IP budget for /bff/login
 	elevateLimiter *rateLimiter // per-IP budget for /bff/elevate
@@ -38,8 +41,7 @@ func NewServer(cfg *Config) *Server {
 // NewServerWithStore builds a Server with an explicit session store (e.g.
 // Postgres). A nil store falls back to the in-memory store when auth is enabled.
 func NewServerWithStore(cfg *Config, store SessionStore) *Server {
-	proxy := httputil.NewSingleHostReverseProxy(cfg.adminURL)
-	proxy.FlushInterval = -1 // stream SSE immediately
+	proxy := bff.NewSingleHostProxy(cfg.adminURL)
 	director := proxy.Director
 	proxy.Director = func(r *http.Request) {
 		director(r)
@@ -55,6 +57,17 @@ func NewServerWithStore(cfg *Config, store SessionStore) *Server {
 		s.oauth = newOAuthClient(cfg)
 		s.loginLimiter = newRateLimiter(cfg.LoginRate, rateWindow)
 		s.elevateLimiter = newRateLimiter(cfg.ElevateRate, rateWindow)
+		s.gateway = &bff.Gateway{
+			Store: s.store,
+			Cookie: bff.CookieConfig{
+				Name:   "mon_session",
+				Secure: cfg.CookieSecure,
+				MaxAge: 0,
+			},
+			Refresher:        tokenRefresherAdapter{s.oauth},
+			AuthEnabled:      true,
+			AllowPassthrough: cfg.AllowPassthrough,
+		}
 	}
 	return s
 }
@@ -62,19 +75,21 @@ func NewServerWithStore(cfg *Config, store SessionStore) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/bff/healthz", s.health)
-	mux.HandleFunc(adminPrefix, s.proxyAdmin)
 	if s.cfg.AuthEnabled() {
+		mux.HandleFunc(adminPrefix, s.gateway.ProxyWithSession(s.proxy))
 		mux.HandleFunc("/bff/login", s.handleLogin)
 		mux.HandleFunc("/bff/callback", s.handleCallback)
 		mux.HandleFunc("/bff/session", s.handleSession)
 		mux.HandleFunc("/bff/logout", s.handleLogout)
 		mux.HandleFunc("/bff/elevate", s.handleElevate)
+	} else {
+		mux.HandleFunc(adminPrefix, s.proxy.ServeHTTP)
 	}
 	return mux
 }
 
 // sweepable is implemented by stores that prune expired rows in bulk.
-type sweepable interface{ sweep() }
+type sweepable interface{ Sweep() }
 
 // StartSweeper periodically prunes expired sessions/login-state and the per-IP
 // rate-limiter windows until ctx is cancelled. It is a no-op only when there is
@@ -93,7 +108,7 @@ func (s *Server) StartSweeper(ctx context.Context) {
 				return
 			case <-t.C:
 				if sw != nil {
-					sw.sweep()
+					sw.Sweep()
 				}
 				if s.loginLimiter != nil {
 					s.loginLimiter.sweep()
@@ -111,78 +126,15 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
-// proxyAdmin forwards allowlisted admin-API calls to Socrate, injecting the
-// session's access token when there is a session (Phase 2) and otherwise passing
-// the request through unchanged (Phase 1 / pre-cookie SPA). For a session-backed
-// request, mutating methods must carry a valid CSRF token (defense-in-depth on
-// top of SameSite=Strict).
-func (s *Server) proxyAdmin(w http.ResponseWriter, r *http.Request) {
-	if s.cfg.AuthEnabled() && s.store != nil {
-		sess := s.currentSession(w, r)
-		if sess == nil {
-			// Fail closed: with auth enabled and no valid session we must not
-			// forward the request (nor any client-supplied Authorization header).
-			// Legacy pass-through is opt-in via BFF_ALLOW_PASSTHROUGH only.
-			if !s.cfg.AllowPassthrough {
-				writeJSON(w, map[string]any{"error": "unauthorized"}, http.StatusUnauthorized)
-				return
-			}
-			s.proxy.ServeHTTP(w, r)
-			return
-		}
-		if isMutating(r.Method) && !s.checkCSRF(r, sess) {
-			writeJSON(w, map[string]any{"error": "invalid_csrf"}, http.StatusForbidden)
-			return
-		}
-		if err := s.ensureFresh(r.Context(), sess); err != nil {
-			writeJSON(w, map[string]any{"error": "session expired"}, http.StatusUnauthorized)
-			return
-		}
-		// Strip any inbound client Authorization and inject the session's token.
-		r.Header.Del("Authorization")
-		r.Header.Set("Authorization", sess.bearer())
-	}
-	s.proxy.ServeHTTP(w, r)
-}
-
-// isMutating reports whether a method changes server state (and thus needs CSRF).
-func isMutating(method string) bool {
-	switch method {
-	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
-		return true
-	default:
-		return false
-	}
-}
-
-// ensureFresh proactively refreshes a session's access token shortly before it
-// expires. A refresh failure is terminal for the request (the SPA re-logs in).
-func (s *Server) ensureFresh(ctx context.Context, sess *Session) error {
-	refresh, expiry := sess.refreshInfo()
-	if refresh == "" || time.Until(expiry) > 30*time.Second {
-		return nil
-	}
-	tr, err := s.oauth.refresh(ctx, refresh)
-	if err != nil {
-		s.store.Delete(sess.ID)
-		return err
-	}
-	sess.applyTokens(tr.AccessToken, tr.RefreshToken, tr.IDToken,
-		time.Now().Add(time.Duration(tr.ExpiresIn)*time.Second))
-	s.store.Put(sess)
-	return nil
-}
-
-func (s *Server) currentSession(_ http.ResponseWriter, r *http.Request) *Session {
-	c, err := r.Cookie(s.cfg.SessionCookieName())
-	if err != nil {
-		return nil
-	}
-	sess, ok := s.store.Get(c.Value)
+// currentSession resolves the session referenced by the request's cookie and
+// slides its idle-timeout window. Used by handlers outside the proxy path
+// (which touches the session itself inside Gateway.ProxyWithSession).
+func (s *Server) currentSession(_ http.ResponseWriter, r *http.Request) *bff.Session {
+	sess, ok := s.gateway.SessionFromRequest(r)
 	if !ok {
 		return nil
 	}
-	sess.touch(time.Now()) // sliding idle window
+	sess.Touch(time.Now())
 	s.store.Put(sess)
 	return sess
 }

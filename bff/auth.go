@@ -3,14 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
+
+	"github.com/ovander/backendkit/bff"
+	"github.com/ovander/backendkit/socrate"
 )
 
 // GET /bff/login — start Authorization Code + PKCE. Stores state + verifier
@@ -19,14 +20,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if s.rateLimited(w, r, s.loginLimiter) {
 		return
 	}
-	state := randToken()
-	verifier := randToken()
+	state := bff.RandomToken(32)
+	verifier := bff.RandomToken(32)
 	s.store.PutLogin(state, loginState{
 		Verifier: verifier,
-		ReturnTo: sanitizeReturnTo(r.URL.Query().Get("return_to")),
+		ReturnTo: bff.SanitizeReturnTo(r.URL.Query().Get("return_to")),
 		Created:  time.Now(),
 	})
-	http.Redirect(w, r, s.oauth.authorizeURL(state, pkceChallenge(verifier)), http.StatusFound)
+	http.Redirect(w, r, s.oauth.authorizeURL(state, bff.S256Challenge(verifier)), http.StatusFound)
 }
 
 // GET /bff/callback — validate state, exchange the code server-side, create the
@@ -51,19 +52,15 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now()
-	sess := &Session{
-		ID:           randToken(),
+	ts := &socrate.TokenSet{
 		AccessToken:  tr.AccessToken,
 		RefreshToken: tr.RefreshToken,
 		IDToken:      tr.IDToken,
-		AccessExpiry: now.Add(time.Duration(tr.ExpiresIn) * time.Second),
-		User:         userFromToken(s.cfg.ClientID, tr),
-		CSRF:         randToken(),
-		Created:      now,
-		LastSeen:     now,
+		ExpiresIn:    tr.ExpiresIn,
 	}
+	sess := bff.NewSession(bff.RandomToken(32), bff.RandomToken(32), ts, userFromToken(s.cfg.ClientID, tr), now)
 	s.store.Put(sess)
-	s.setSessionCookie(w, sess.ID)
+	s.gateway.Cookie.SetSession(w, sess.ID())
 	http.Redirect(w, r, ls.ReturnTo, http.StatusFound)
 }
 
@@ -76,8 +73,8 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]any{
 		"authenticated": true,
-		"user":          sess.snapshotUser(),
-		"csrf":          sess.csrfToken(),
+		"user":          sess.User(),
+		"csrf":          sess.CSRF(),
 	})
 }
 
@@ -86,25 +83,25 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 // check as the other state-changing endpoints.
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if sess := s.currentSession(w, r); sess != nil {
-		if !s.checkCSRF(r, sess) {
+		if !sess.MatchCSRF(r.Header.Get("X-CSRF-Token")) {
 			writeJSON(w, map[string]any{"error": "invalid_csrf"}, http.StatusForbidden)
 			return
 		}
 		s.revokeSessionTokens(r.Context(), sess)
-		s.store.Delete(sess.ID)
+		s.store.Delete(sess.ID())
 	}
-	s.clearSessionCookie(w)
+	s.gateway.Cookie.ClearSession(w)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // revokeSessionTokens best-effort revokes the session's refresh and access tokens
 // at the issuer. Failures are logged and swallowed: logout must always clear the
 // local session state regardless of the issuer's availability.
-func (s *Server) revokeSessionTokens(ctx context.Context, sess *Session) {
+func (s *Server) revokeSessionTokens(ctx context.Context, sess *bff.Session) {
 	if s.oauth == nil {
 		return
 	}
-	refresh, access := sess.tokens()
+	refresh, access := sess.RefreshToken(), sess.AccessToken()
 	if err := s.oauth.revoke(ctx, refresh, "refresh_token"); err != nil {
 		log.Printf("bff: refresh-token revoke failed: %v", err)
 	}
@@ -126,8 +123,16 @@ func (s *Server) handleElevate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"error": "unauthenticated"}, http.StatusUnauthorized)
 		return
 	}
-	if !s.checkCSRF(r, sess) {
+	if !sess.MatchCSRF(r.Header.Get("X-CSRF-Token")) {
 		writeJSON(w, map[string]any{"error": "invalid_csrf"}, http.StatusForbidden)
+		return
+	}
+
+	// Make sure the session's access token is fresh before we use it against
+	// the upstream elevate endpoint; a refresh failure invalidates the session.
+	if _, err := s.gateway.EnsureFresh(r.Context(), sess); err != nil {
+		s.store.Delete(sess.ID())
+		writeJSON(w, map[string]any{"error": "session expired"}, http.StatusUnauthorized)
 		return
 	}
 
@@ -138,7 +143,7 @@ func (s *Server) handleElevate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"error": "elevation_failed"}, http.StatusInternalServerError)
 		return
 	}
-	req.Header.Set("Authorization", sess.bearer())
+	req.Header.Set("Authorization", "Bearer "+sess.AccessToken())
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.oauth.http.Do(req)
@@ -165,68 +170,14 @@ func (s *Server) handleElevate(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.Unmarshal(rb, &lr)
 	if lr.AccessToken != "" {
-		expiry := sess.expiry()
-		if lr.ExpiresIn > 0 {
-			expiry = time.Now().Add(time.Duration(lr.ExpiresIn) * time.Second)
+		ts := &socrate.TokenSet{
+			AccessToken:  lr.AccessToken,
+			RefreshToken: lr.RefreshToken,
+			IDToken:      lr.IDToken,
+			ExpiresIn:    lr.ExpiresIn,
 		}
-		sess.applyTokens(lr.AccessToken, lr.RefreshToken, lr.IDToken, expiry)
+		sess.SetTokens(ts, time.Now())
 		s.store.Put(sess)
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// checkCSRF enforces the double-submit token on state-changing BFF endpoints.
-// SameSite=Strict already blocks cross-site cookie attachment; this is
-// defense-in-depth. Constant-time compare against the session's CSRF token.
-func (s *Server) checkCSRF(r *http.Request, sess *Session) bool {
-	got := r.Header.Get("X-CSRF-Token")
-	csrf := sess.csrfToken()
-	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(csrf)) == 1
-}
-
-func (s *Server) setSessionCookie(w http.ResponseWriter, id string) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     s.cfg.SessionCookieName(),
-		Value:    id,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   s.cfg.CookieSecure,
-		SameSite: http.SameSiteStrictMode,
-	})
-}
-
-func (s *Server) clearSessionCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     s.cfg.SessionCookieName(),
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   s.cfg.CookieSecure,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   -1,
-	})
-}
-
-// sanitizeReturnTo prevents open redirects: only same-site absolute paths are
-// allowed; anything else falls back to "/". Backslashes are rejected because
-// browsers normalize "/\evil.com" (and "\") into the protocol-relative
-// "//evil.com"; control characters are rejected outright; and the target is
-// parse-validated so its host must be empty.
-func sanitizeReturnTo(p string) string {
-	if p == "" || !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") {
-		return "/"
-	}
-	if strings.ContainsRune(p, '\\') {
-		return "/"
-	}
-	for _, r := range p {
-		if r < 0x20 || r == 0x7f {
-			return "/"
-		}
-	}
-	u, err := url.Parse(p)
-	if err != nil || u.Scheme != "" || u.Host != "" {
-		return "/"
-	}
-	return p
 }

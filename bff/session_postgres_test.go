@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"testing"
 	"time"
+
+	"github.com/ovander/backendkit/bff"
 )
 
 func mustURL(t *testing.T, s string) *url.URL {
@@ -33,32 +35,37 @@ func TestNewServerWithStore_UsesInjectedStore(t *testing.T) {
 	}
 }
 
-// The Session must round-trip cleanly through JSON, since the Postgres store
-// persists it in a jsonb column.
+// The Session must round-trip cleanly through JSON via Snapshot()/
+// NewSessionFromSnapshot(), since that is exactly what
+// PostgresSessionStore.Put/Get do to persist a *bff.Session in a jsonb column
+// (bff.Session's fields are private, so it cannot be marshalled directly).
 func TestSessionJSONRoundTrip(t *testing.T) {
-	in := &Session{
+	in := bff.NewSessionFromSnapshot(bff.SessionSnapshot{
 		ID:           "sid",
 		AccessToken:  "at",
 		RefreshToken: "rt",
 		IDToken:      "id",
 		AccessExpiry: time.Unix(1_700_000_000, 0).UTC(),
-		User:         UserInfo{Sub: "u1", Email: "a@b.c", Name: "Admin", Roles: []string{"admin", "monitor_admin"}},
+		User:         bff.UserInfo{Sub: "u1", Email: "a@b.c", Name: "Admin", Roles: []string{"admin", "monitor_admin"}},
 		CSRF:         "csrf-1",
 		Created:      time.Unix(1, 0).UTC(),
 		LastSeen:     time.Unix(2, 0).UTC(),
-	}
-	b, err := json.Marshal(in)
+	})
+
+	b, err := json.Marshal(in.Snapshot())
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	var out Session
-	if err := json.Unmarshal(b, &out); err != nil {
+	var decoded bff.SessionSnapshot
+	if err := json.Unmarshal(b, &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if out.AccessToken != "at" || out.RefreshToken != "rt" || out.User.Sub != "u1" || out.CSRF != "csrf-1" {
-		t.Fatalf("round-trip mismatch: %+v", &out)
+	out := bff.NewSessionFromSnapshot(decoded)
+
+	if out.AccessToken() != "at" || out.RefreshToken() != "rt" || out.User().Sub != "u1" || out.CSRF() != "csrf-1" {
+		t.Fatalf("round-trip mismatch: %+v", out.Snapshot())
 	}
-	if !out.AccessExpiry.Equal(in.AccessExpiry) || len(out.User.Roles) != 2 {
-		t.Fatalf("round-trip lost fields: %+v", &out)
+	if !out.Snapshot().AccessExpiry.Equal(in.Snapshot().AccessExpiry) || len(out.User().Roles) != 2 {
+		t.Fatalf("round-trip lost fields: %+v", out.Snapshot())
 	}
 }
