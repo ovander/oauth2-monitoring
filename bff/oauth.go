@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -12,20 +10,10 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/ovander/backendkit/bff"
+	"github.com/ovander/backendkit/socrate"
 )
-
-// randToken returns a URL-safe, 256-bit random token (state, verifier, sid, csrf).
-func randToken() string {
-	b := make([]byte, 32)
-	_, _ = rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
-}
-
-// pkceChallenge returns the S256 challenge for a verifier.
-func pkceChallenge(verifier string) string {
-	sum := sha256.Sum256([]byte(verifier))
-	return base64.RawURLEncoding.EncodeToString(sum[:])
-}
 
 // tokenResponse is Socrate's /oauth/token reply (superset of the standard).
 type tokenResponse struct {
@@ -82,6 +70,22 @@ func (o *oauthClient) refresh(ctx context.Context, refreshToken string) (*tokenR
 		"client_id":     {o.cfg.ClientID},
 	}
 	return o.token(ctx, form)
+}
+
+// tokenRefresherAdapter adapts oauthClient.refresh to bff.TokenRefresher, so
+// bff.Gateway can proactively refresh a session's access token without this
+// package re-implementing that logic.
+type tokenRefresherAdapter struct{ c *oauthClient }
+
+func (a tokenRefresherAdapter) RefreshToken(ctx context.Context, refreshToken string) (*socrate.TokenSet, error) {
+	tr, err := a.c.refresh(ctx, refreshToken)
+	if err != nil {
+		return nil, err
+	}
+	return &socrate.TokenSet{
+		AccessToken: tr.AccessToken, RefreshToken: tr.RefreshToken, IDToken: tr.IDToken,
+		ExpiresIn: tr.ExpiresIn, TokenType: tr.TokenType, Roles: tr.Roles, AppRoles: tr.AppRoles,
+	}, nil
 }
 
 func (o *oauthClient) token(ctx context.Context, form url.Values) (*tokenResponse, error) {
@@ -158,8 +162,8 @@ func (o *oauthClient) revoke(ctx context.Context, token, hint string) error {
 // claims are read from the (unverified) access-token payload — the token came
 // from our own OAuth server over loopback and the security boundary is the
 // session cookie, not this decode — and roles are merged from the response body.
-func userFromToken(clientID string, tr *tokenResponse) UserInfo {
-	u := UserInfo{Roles: mergeRoles(clientID, tr)}
+func userFromToken(clientID string, tr *tokenResponse) bff.UserInfo {
+	u := bff.UserInfo{Roles: mergeRoles(clientID, tr)}
 	claims := decodeJWTClaims(tr.AccessToken)
 	if v, ok := claims["sub"].(string); ok {
 		u.Sub = v

@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/ovander/backendkit/bff"
 )
 
 // PostgresSessionStore is a durable, multi-instance SessionStore. Sessions and
@@ -97,10 +98,11 @@ func (s *PostgresSessionStore) TakeLogin(state string) (loginState, bool) {
 	return ls, true
 }
 
-func (s *PostgresSessionStore) Put(sess *Session) {
+func (s *PostgresSessionStore) Put(sess *bff.Session) {
 	ctx, cancel := opCtx()
 	defer cancel()
-	data, err := json.Marshal(sess)
+	snap := sess.Snapshot()
+	data, err := json.Marshal(snap)
 	if err != nil {
 		return
 	}
@@ -108,10 +110,10 @@ func (s *PostgresSessionStore) Put(sess *Session) {
 		INSERT INTO bff_sessions (id, data, created_at, last_seen)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, last_seen = EXCLUDED.last_seen`,
-		sess.ID, data, sess.Created, sess.LastSeen)
+		sess.ID(), data, snap.Created, snap.LastSeen)
 }
 
-func (s *PostgresSessionStore) Get(id string) (*Session, bool) {
+func (s *PostgresSessionStore) Get(id string) (*bff.Session, bool) {
 	ctx, cancel := opCtx()
 	defer cancel()
 	var data []byte
@@ -130,11 +132,11 @@ func (s *PostgresSessionStore) Get(id string) (*Session, bool) {
 		s.Delete(id)
 		return nil, false
 	}
-	var sess Session
-	if json.Unmarshal(data, &sess) != nil {
+	var snap bff.SessionSnapshot
+	if json.Unmarshal(data, &snap) != nil {
 		return nil, false
 	}
-	return &sess, true
+	return bff.NewSessionFromSnapshot(snap), true
 }
 
 func (s *PostgresSessionStore) Delete(id string) {
@@ -143,8 +145,8 @@ func (s *PostgresSessionStore) Delete(id string) {
 	_, _ = s.pool.Exec(ctx, `DELETE FROM bff_sessions WHERE id = $1`, id)
 }
 
-// sweep removes expired sessions and stale login state in bulk.
-func (s *PostgresSessionStore) sweep() {
+// Sweep removes expired sessions and stale login state in bulk.
+func (s *PostgresSessionStore) Sweep() {
 	ctx, cancel := opCtx()
 	defer cancel()
 	_, _ = s.pool.Exec(ctx,

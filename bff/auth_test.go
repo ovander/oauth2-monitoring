@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/ovander/backendkit/bff"
 )
 
 func makeJWT(claims map[string]any) string {
@@ -146,9 +148,9 @@ func TestPhase2_FullFlow(t *testing.T) {
 	// 3) session → authenticated, roles merged from body + app_roles.
 	sess := h.do(http.MethodGet, "/bff/session", cookie)
 	var sb struct {
-		Authenticated bool     `json:"authenticated"`
-		User          UserInfo `json:"user"`
-		CSRF          string   `json:"csrf"`
+		Authenticated bool         `json:"authenticated"`
+		User          bff.UserInfo `json:"user"`
+		CSRF          string       `json:"csrf"`
 	}
 	_ = json.Unmarshal(sess.Body.Bytes(), &sb)
 	if !sb.Authenticated || sb.User.Sub != "u1" || sb.User.Email != "a@b.c" {
@@ -214,7 +216,7 @@ func TestPhase2_FailClosedWithoutSession(t *testing.T) {
 // the request is forwarded and the browser's own Authorization header is kept.
 func TestPhase2_PassThroughWhenFlagSet(t *testing.T) {
 	h := newPhase2Harness(t)
-	h.srv.cfg.AllowPassthrough = true
+	h.srv.gateway.AllowPassthrough = true
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/x", nil)
 	req.Header.Set("Authorization", "Bearer browser-token")
 	rec := httptest.NewRecorder()
@@ -286,8 +288,8 @@ func TestSanitizeReturnTo(t *testing.T) {
 		{"/a\x7fb", "/"},
 	}
 	for _, c := range cases {
-		if got := sanitizeReturnTo(c.in); got != c.want {
-			t.Errorf("sanitizeReturnTo(%q) = %q, want %q", c.in, got, c.want)
+		if got := bff.SanitizeReturnTo(c.in); got != c.want {
+			t.Errorf("bff.SanitizeReturnTo(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
 }
