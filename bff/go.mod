@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/jackc/pgx/v5 v5.9.2
-	github.com/ovander/backendkit v1.9.1-0.20260702214821-a38e9009ae2b
+	github.com/ovander/backendkit v1.10.0
 )
 
 require (
