@@ -65,7 +65,8 @@ func NewServerWithStore(cfg *Config, store SessionStore) *Server {
 				MaxAge: 0,
 			},
 			Refresher:        tokenRefresherAdapter{s.oauth},
-			AuthEnabled:      true,
+			// backendkit >= v1.11.0: the gateway is fail-closed by default
+			// (DisableAuth zero value); only constructed when auth is enabled.
 			AllowPassthrough: cfg.AllowPassthrough,
 		}
 	}
