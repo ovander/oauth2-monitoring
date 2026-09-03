@@ -4,12 +4,12 @@
 # Caddy is the ONLY public listener (ports 80/443). Everything else binds
 # loopback and is fronted here:
 #   socrate.vandermoten.eu     → OAuth 2.1 / OIDC server   (127.0.0.1:8080)
-#   admin.vandermoten.eu       → admin SPA + admin API hop  (static + 127.0.0.1:8081)
 #   monitoring.vandermoten.eu  → monitoring SPA + BFF       (static + 127.0.0.1:8090)
+#   admin.vandermoten.eu       → admin SPA + admin BFF      (own site file, see the end)
+#   app-*.vandermoten.eu       → relying-party apps         (own site files)
 #
 # The admin API (127.0.0.1:8081) has NO public subdomain of its own — it is the
-# Tier-0 control plane and is reachable only on-box (via the BFF, and via Caddy
-# for the admin SPA until that console gets its own BFF).
+# Tier-0 control plane and is reachable only on-box, through the console BFFs.
 # ─────────────────────────────────────────────────────────────────────────────
 
 {
@@ -60,23 +60,12 @@ monitoring.vandermoten.eu {
 	}
 }
 
-# ── Admin console SPA (separate frontend) ──────────────────────────────────────
-# NOTE: the admin SPA still holds tokens in the browser and calls the admin API
-# directly (through Caddy → loopback). It should get its own BFF (same pattern as
-# monitoring) so the admin console also stops carrying tokens. Until then, this
-# block keeps it working while the admin API stays loopback-only.
-admin.vandermoten.eu {
-	encode zstd gzip
-	import security_headers
-
-	@adminapi path /api/admin/*
-	reverse_proxy @adminapi 127.0.0.1:8081 {
-		header_up X-Forwarded-Proto {scheme}
-	}
-
-	handle {
-		root * /srv/admin/dist
-		try_files {path} /index.html
-		file_server
-	}
-}
+# ── Admin console (admin.vandermoten.eu) and any relying-party app ─────────────
+# Each other public host lives in its own site file under /etc/caddy/sites/,
+# installed by that project's deploy kit (oauth2-admin/deploy/Caddyfile routes
+# /bff/*, /api/admin/*, /api/profile, /api/version and the password-reset posts
+# to the admin BFF on 127.0.0.1:8091). The admin API on 127.0.0.1:8081 must
+# NEVER be routed from a public host — only the console BFFs reach it, over
+# loopback. The block that used to live here proxied admin.…/api/admin/* to
+# :8081 directly (pre-BFF) and is gone.
+import /etc/caddy/sites/*.caddy

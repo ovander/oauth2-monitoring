@@ -32,8 +32,8 @@ monitoring BFF**.
 - Caddy is the only thing listening on the public interface. Everything else
   binds `127.0.0.1`.
 - The **admin API (`:8081`) is loopback-only** (`ADMIN_BIND_HOST=127.0.0.1`) — off
-  the public internet entirely. The monitoring **BFF** is its client; the admin
-  SPA reaches it through Caddy on-box (until it gets its own BFF).
+  the public internet entirely. Its only clients are the two console BFFs
+  (monitoring here, admin in `oauth2-admin/deploy/`), over loopback.
 - The monitoring SPA holds no tokens: the BFF owns the OAuth session and injects
   the bearer on the proxy. Running the BFF as a transparent proxy (Phase 1)
   requires the explicit `BFF_PHASE1_PASSTHROUGH=true` opt-in and is for a
@@ -253,5 +253,9 @@ Top to bottom, the first time:
   never in the repo or the SPA bundle.
 - **Distroless option:** both Go services also ship Dockerfiles if you prefer
   containers; this kit targets native systemd for a single VPS.
-- **Follow-up:** give the **admin SPA its own BFF** so it too stops holding
-  tokens in the browser (it currently calls the loopback admin API via Caddy).
+- **Admin console:** has its own BFF (`oauth2-admin/deploy/`), which installs
+  its Caddy site file under `/etc/caddy/sites/`. The main Caddyfile here ends
+  with `import /etc/caddy/sites/*.caddy`; it no longer routes any public host
+  to the admin API directly.
+- **Suite-level runbook** (multi-app, one VPS):
+  `go-oauth2/docs/DEPLOYMENT-VPS-MULTI-APP.md`.
