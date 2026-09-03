@@ -69,6 +69,14 @@ type Config struct {
 	// being rejected. Default false (fail-closed); set BFF_ALLOW_PASSTHROUGH
 	// only for a controlled migration window.
 	AllowPassthrough bool
+
+	// Phase1Passthrough (BFF_PHASE1_PASSTHROUGH) is the explicit opt-in
+	// required to run WITHOUT server-side sessions (BFF_CLIENT_ID unset). In
+	// that mode the BFF is a bare pass-through: every /api/admin/* request
+	// reaches the loopback-only admin API from the internet with whatever
+	// Authorization header the browser sends and no CSRF check. It must be
+	// chosen deliberately, and only for a migration window.
+	Phase1Passthrough bool
 }
 
 // AuthEnabled reports whether server-side OAuth / sessions are configured.
@@ -91,21 +99,22 @@ func (c *Config) RedirectURI() string {
 // LoadConfig reads configuration from the environment with safe defaults.
 func LoadConfig() (*Config, error) {
 	c := &Config{
-		ListenAddr:       getenv("BFF_LISTEN_ADDR", "127.0.0.1:8090"),
-		AdminUpstream:    getenv("BFF_ADMIN_UPSTREAM", "http://127.0.0.1:8081"),
-		OAuthUpstream:    getenv("BFF_OAUTH_UPSTREAM", "http://127.0.0.1:8080"),
-		OAuthPublicURL:   getenv("BFF_OAUTH_PUBLIC_URL", ""),
-		PublicOrigin:     getenv("BFF_PUBLIC_ORIGIN", ""),
-		ClientID:         getenv("BFF_CLIENT_ID", ""),
-		ClientSecret:     getenv("BFF_CLIENT_SECRET", ""),
-		Scopes:           getenv("BFF_SCOPES", "openid profile email"),
-		SessionIdle:      getdur("BFF_SESSION_IDLE", 30*time.Minute),
-		SessionAbsolute:  getdur("BFF_SESSION_ABSOLUTE", 8*time.Hour),
-		SessionDSN:       getenv("BFF_SESSION_DSN", ""),
-		CookieSecure:     getbool("BFF_COOKIE_SECURE", true),
-		AllowPassthrough: getbool("BFF_ALLOW_PASSTHROUGH", false),
-		LoginRate:        getint("BFF_LOGIN_RATE", 10),
-		ElevateRate:      getint("BFF_ELEVATE_RATE", 5),
+		ListenAddr:        getenv("BFF_LISTEN_ADDR", "127.0.0.1:8090"),
+		AdminUpstream:     getenv("BFF_ADMIN_UPSTREAM", "http://127.0.0.1:8081"),
+		OAuthUpstream:     getenv("BFF_OAUTH_UPSTREAM", "http://127.0.0.1:8080"),
+		OAuthPublicURL:    getenv("BFF_OAUTH_PUBLIC_URL", ""),
+		PublicOrigin:      getenv("BFF_PUBLIC_ORIGIN", ""),
+		ClientID:          getenv("BFF_CLIENT_ID", ""),
+		ClientSecret:      getenv("BFF_CLIENT_SECRET", ""),
+		Scopes:            getenv("BFF_SCOPES", "openid profile email"),
+		SessionIdle:       getdur("BFF_SESSION_IDLE", 30*time.Minute),
+		SessionAbsolute:   getdur("BFF_SESSION_ABSOLUTE", 8*time.Hour),
+		SessionDSN:        getenv("BFF_SESSION_DSN", ""),
+		CookieSecure:      getbool("BFF_COOKIE_SECURE", true),
+		AllowPassthrough:  getbool("BFF_ALLOW_PASSTHROUGH", false),
+		Phase1Passthrough: getbool("BFF_PHASE1_PASSTHROUGH", false),
+		LoginRate:         getint("BFF_LOGIN_RATE", 10),
+		ElevateRate:       getint("BFF_ELEVATE_RATE", 5),
 	}
 
 	u, err := url.Parse(c.AdminUpstream)
@@ -114,17 +123,54 @@ func LoadConfig() (*Config, error) {
 	}
 	c.adminURL = u
 
-	if c.AuthEnabled() {
-		ou, err := url.Parse(c.OAuthUpstream)
-		if err != nil || ou.Scheme == "" || ou.Host == "" {
-			return nil, fmt.Errorf("invalid BFF_OAUTH_UPSTREAM %q", c.OAuthUpstream)
+	if !c.AuthEnabled() {
+		// P3-26 / pass-3 N-5: never run as an open pass-through by accident.
+		if !c.Phase1Passthrough {
+			return nil, fmt.Errorf("BFF_CLIENT_ID is not set: server-side sessions are disabled and the BFF would be an " +
+				"unauthenticated pass-through to the admin API; set BFF_CLIENT_ID (+ BFF_CLIENT_SECRET) to enable them, " +
+				"or BFF_PHASE1_PASSTHROUGH=true to run Phase 1 deliberately for a migration window")
 		}
-		c.oauthURL = ou
-		if c.OAuthPublicURL == "" || c.PublicOrigin == "" {
-			return nil, fmt.Errorf("BFF_OAUTH_PUBLIC_URL and BFF_PUBLIC_ORIGIN are required when BFF_CLIENT_ID is set")
-		}
+		return c, nil
+	}
+
+	ou, err := url.Parse(c.OAuthUpstream)
+	if err != nil || ou.Scheme == "" || ou.Host == "" {
+		return nil, fmt.Errorf("invalid BFF_OAUTH_UPSTREAM %q", c.OAuthUpstream)
+	}
+	c.oauthURL = ou
+	if c.OAuthPublicURL == "" || c.PublicOrigin == "" {
+		return nil, fmt.Errorf("BFF_OAUTH_PUBLIC_URL and BFF_PUBLIC_ORIGIN are required when BFF_CLIENT_ID is set")
+	}
+	if c.ClientSecret == "" {
+		return nil, fmt.Errorf("BFF_CLIENT_SECRET is required when BFF_CLIENT_ID is set (the BFF is a confidential client)")
+	}
+	// A non-Secure cookie on an https origin drops the __Host- prefix and the
+	// Secure attribute; only permit it for a plain-http (local dev) origin.
+	if !c.CookieSecure && strings.HasPrefix(strings.ToLower(c.PublicOrigin), "https://") {
+		return nil, fmt.Errorf("BFF_COOKIE_SECURE=false is only allowed with a non-https BFF_PUBLIC_ORIGIN (local development); got %q", c.PublicOrigin)
+	}
+	// Zero/negative lifetimes mean "no bound" on the in-memory store but
+	// "expire immediately" on the Postgres store (pass-3 N-4) — reject both.
+	if c.SessionIdle <= 0 {
+		return nil, fmt.Errorf("BFF_SESSION_IDLE must be positive, got %s", c.SessionIdle)
+	}
+	if c.SessionAbsolute <= 0 {
+		return nil, fmt.Errorf("BFF_SESSION_ABSOLUTE must be positive, got %s", c.SessionAbsolute)
 	}
 	return c, nil
+}
+
+// Warnings lists deliberately-unsafe settings that are legal but must be
+// visible in the startup log, so a migration flag cannot linger unnoticed.
+func (c *Config) Warnings() []string {
+	var w []string
+	if !c.AuthEnabled() {
+		w = append(w, "BFF_PHASE1_PASSTHROUGH=true: no server-side sessions — /api/admin/* is an unauthenticated pass-through; disable as soon as BFF_CLIENT_ID is configured")
+	}
+	if c.AllowPassthrough {
+		w = append(w, "BFF_ALLOW_PASSTHROUGH=true: requests without a session are forwarded with the browser's own Authorization header and no CSRF check; disable after the migration window")
+	}
+	return w
 }
 
 func getenv(key, def string) string {
