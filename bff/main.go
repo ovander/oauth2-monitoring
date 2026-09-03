@@ -1,9 +1,13 @@
 // Command bff is the Backend-for-Frontend for the Socrate monitoring console.
 //
-// Phase 1 (this build) runs as an internal service behind Caddy on
-// monitoring.vandermoten.eu and reverse-proxies the admin API to Socrate,
-// proving the proxy + SSE path. Later phases move OAuth token custody
-// server-side so the browser holds only an HttpOnly session cookie.
+// It runs as an internal service behind Caddy on monitoring.vandermoten.eu,
+// holds OAuth token custody server-side (Authorization-Code + PKCE login, an
+// opaque HttpOnly session cookie, session→bearer injection on the allowlisted
+// admin-API proxy, SSE-aware) so the browser never sees a token.
+//
+// Running without server-side sessions (Phase 1 pass-through, BFF_CLIENT_ID
+// unset) requires the explicit BFF_PHASE1_PASSTHROUGH=true opt-in and is
+// meant only for a migration window.
 package main
 
 import (
@@ -20,6 +24,9 @@ func main() {
 	cfg, err := LoadConfig()
 	if err != nil {
 		log.Fatalf("bff: config: %v", err)
+	}
+	for _, w := range cfg.Warnings() {
+		log.Printf("bff: WARNING: %s", w)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

@@ -34,8 +34,10 @@ monitoring BFF**.
 - The **admin API (`:8081`) is loopback-only** (`ADMIN_BIND_HOST=127.0.0.1`) — off
   the public internet entirely. The monitoring **BFF** is its client; the admin
   SPA reaches it through Caddy on-box (until it gets its own BFF).
-- The monitoring SPA holds no tokens once BFF Phase 2 lands; today (Phase 1) the
-  BFF is a transparent proxy.
+- The monitoring SPA holds no tokens: the BFF owns the OAuth session and injects
+  the bearer on the proxy. Running the BFF as a transparent proxy (Phase 1)
+  requires the explicit `BFF_PHASE1_PASSTHROUGH=true` opt-in and is for a
+  migration window only.
 - Build toolchains (Node/Go) stay **off the VPS** — we ship built artifacts only.
 
 ## Components & ports

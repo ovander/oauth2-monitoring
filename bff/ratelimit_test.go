@@ -82,6 +82,7 @@ func TestClientIPPrefersXForwardedFor(t *testing.T) {
 // Retry-After header instead of issuing another OAuth redirect.
 func TestHandleLoginRateLimited(t *testing.T) {
 	t.Setenv("BFF_CLIENT_ID", "cid")
+	t.Setenv("BFF_CLIENT_SECRET", "s3cret")
 	t.Setenv("BFF_OAUTH_PUBLIC_URL", "https://issuer.example")
 	t.Setenv("BFF_PUBLIC_ORIGIN", "https://mon.example")
 	cfg, err := LoadConfig()

@@ -40,8 +40,10 @@ Browser ──HTTPS──► Caddy (monitoring.vandermoten.eu)
 |---------|---------|-------------|
 | `BFF_LISTEN_ADDR` | `127.0.0.1:8090` | Address the BFF binds (localhost-only; Caddy fronts it). |
 | `BFF_ADMIN_UPSTREAM` | `http://127.0.0.1:8081` | Internal base URL of the Socrate admin API. |
-| `BFF_CLIENT_ID` | *(empty)* | OAuth client id. **Set this to enable Phase 2** (server-side sessions). Empty = Phase 1 pass-through. |
-| `BFF_CLIENT_SECRET` | *(empty)* | Confidential client secret (server-side only). |
+| `BFF_CLIENT_ID` | *(empty)* | OAuth client id — **required**: the BFF refuses to start without server-side sessions unless `BFF_PHASE1_PASSTHROUGH=true` is set deliberately. |
+| `BFF_CLIENT_SECRET` | *(empty)* | Confidential client secret (server-side only); required with `BFF_CLIENT_ID`. |
+| `BFF_PHASE1_PASSTHROUGH` | `false` | Explicit opt-in to run **without** sessions (unauthenticated pass-through to the admin API). Migration window only; logged as a WARNING. |
+| `BFF_ALLOW_PASSTHROUGH` | `false` | With sessions on, forward session-less requests with their own bearer instead of `401`. Migration window only; logged as a WARNING. |
 | `BFF_OAUTH_UPSTREAM` | `http://127.0.0.1:8080` | Internal OAuth server base URL (back-channel token exchange/refresh). |
 | `BFF_OAUTH_PUBLIC_URL` | *(required if auth)* | Public OAuth base URL for the browser authorize redirect (e.g. `https://socrate.vandermoten.eu`). |
 | `BFF_PUBLIC_ORIGIN` | *(required if auth)* | This console's public origin; `redirect_uri` = origin + `/bff/callback`. |
@@ -49,7 +51,7 @@ Browser ──HTTPS──► Caddy (monitoring.vandermoten.eu)
 | `BFF_SESSION_IDLE` | `30m` | Idle session timeout. |
 | `BFF_SESSION_ABSOLUTE` | `8h` | Absolute session lifetime. |
 | `BFF_SESSION_DSN` | *(empty)* | Postgres DSN for the **durable** session store (survives restarts / multi-instance). Empty = in-memory (single instance). |
-| `BFF_COOKIE_SECURE` | `true` | `Secure` attribute + `__Host-` cookie name. Set `false` only for local HTTP dev. |
+| `BFF_COOKIE_SECURE` | `true` | `Secure` attribute + `__Host-` cookie name. `false` is only accepted together with an `http://` `BFF_PUBLIC_ORIGIN` (local dev). |
 
 ## Run
 
@@ -65,7 +67,7 @@ docker run --rm -p 127.0.0.1:8090:8090 \
 
 Wire it into Caddy with [`Caddyfile.example`](./Caddyfile.example).
 
-## Routes (Phase 1)
+## Routes
 
 | Route | Behavior |
 |-------|----------|
@@ -80,7 +82,7 @@ Wire it into Caddy with [`Caddyfile.example`](./Caddyfile.example).
 
 ## Roadmap
 
-- **Phase 1:** skeleton proxy, no behavior change. ✅
+- **Phase 1:** skeleton proxy, no behavior change. ✅ (now opt-in only via `BFF_PHASE1_PASSTHROUGH=true`)
 - **Phase 2 (here):** `/bff/login|callback|session|logout`, server-side sessions,
   `__Host-` `HttpOnly`/`Secure`/`SameSite=Strict` cookie, server-side token
   injection — **the milestone that removes tokens from the browser**. ✅
