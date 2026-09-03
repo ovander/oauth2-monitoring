@@ -125,6 +125,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAdmin,
     isViewer,
     csrfHeaders,
+    setUnauthenticated,
     fetchSession,
     login,
     logout,

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httputil"
+	"path"
 	"time"
 
 	"github.com/ovander/backendkit/bff"
@@ -88,7 +89,28 @@ func (s *Server) Handler() http.Handler {
 	} else {
 		mux.HandleFunc(adminPrefix, s.proxy.ServeHTTP)
 	}
-	return mux
+	return canonicalPathOnly(mux)
+}
+
+// canonicalPathOnly rejects any request whose path is not already in canonical
+// form before it can reach an allowlist match (P3-18). http.ServeMux redirects
+// a literal "/api/admin/../x", but a percent-encoded dot-segment
+// ("/api/admin/%2e%2e/x") is matched on its escaped form, forwarded verbatim,
+// and only normalised by the UPSTREAM — whose idea of the resulting path may
+// differ from ours. Refusing non-canonical paths outright keeps the allowlist
+// decision and the upstream's routing decision on the same string.
+func canonicalPathOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		clean := path.Clean(p)
+		// RawPath is only set when the request used a non-default encoding
+		// (e.g. %2e for "."), which is never legitimate for these routes.
+		if r.URL.RawPath != "" || (p != clean && p != clean+"/") {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // sweepable is implemented by stores that prune expired rows in bulk.
@@ -129,6 +151,22 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
+// toucher is implemented by stores that can slide a session's idle window
+// WITHOUT re-creating the row (P3-29). Put is an upsert: a /bff/session call
+// racing a logout could Get the session just before Delete ran and then Put it
+// straight back — resurrecting a session whose tokens were just revoked. Touch
+// is an UPDATE that is a no-op once the row is gone.
+type toucher interface {
+	Touch(sess *bff.Session)
+}
+
+// sessionDeleter is implemented by stores that can report a failed Delete
+// (P3-28). The shared bff.SessionStore.Delete has no error return; a logout
+// whose server-side delete failed must not look like a clean logout.
+type sessionDeleter interface {
+	DeleteSession(id string) error
+}
+
 // currentSession resolves the session referenced by the request's cookie and
 // slides its idle-timeout window. Used by handlers outside the proxy path
 // (which touches the session itself inside Gateway.ProxyWithSession).
@@ -138,8 +176,22 @@ func (s *Server) currentSession(_ http.ResponseWriter, r *http.Request) *bff.Ses
 		return nil
 	}
 	sess.Touch(time.Now())
-	s.store.Put(sess)
+	if t, ok := s.store.(toucher); ok {
+		t.Touch(sess)
+	} else {
+		s.store.Put(sess)
+	}
 	return sess
+}
+
+// deleteSession removes the session and reports a store failure when the
+// store can surface one.
+func (s *Server) deleteSession(id string) error {
+	if d, ok := s.store.(sessionDeleter); ok {
+		return d.DeleteSession(id)
+	}
+	s.store.Delete(id)
+	return nil
 }
 
 func writeJSON(w http.ResponseWriter, v any, status ...int) {

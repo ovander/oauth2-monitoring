@@ -78,6 +78,20 @@ describe('fetchWithAuth', () => {
     await expect(api.fetchWithAuth('/api/admin/x')).rejects.toThrow('Session expired')
     expect(loginSpy).toHaveBeenCalled()
   })
+
+  // P3-22: the cached identity must be dropped BEFORE the redirect, so nothing
+  // keeps treating the user as signed in once the BFF has said 401.
+  it('clears the cached identity on 401 before redirecting to login', async () => {
+    const authStore = authed()
+    vi.spyOn(authStore, 'login').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockErrorResponse(401)))
+
+    const api = useApi()
+    await expect(api.fetchWithAuth('/api/admin/x')).rejects.toThrow('Session expired')
+    expect(authStore.isAuthenticated).toBe(false)
+    expect(authStore.user).toBeNull()
+    expect(authStore.csrf).toBeNull()
+  })
 })
 
 // ─── fetchDashboardStats ──────────────────────────────────────────────────────

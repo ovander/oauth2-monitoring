@@ -74,8 +74,8 @@ Wire it into Caddy with [`Caddyfile.example`](./Caddyfile.example).
 | `GET /bff/healthz` | Liveness probe. |
 | `GET /bff/login` | Start Authorization-Code + PKCE (Phase 2). |
 | `GET /bff/callback` | Server-side code exchange, create session, set cookie. |
-| `GET /bff/session` | `{authenticated, user, csrf}` for SPA bootstrap. |
-| `POST /bff/logout` | Destroy session, clear cookie. |
+| `GET /bff/session` | `{authenticated, user, csrf}` for SPA bootstrap (`Cache-Control: no-store`). Slides the idle window with an UPDATE-only touch, never an upsert (P3-29). |
+| `POST /bff/logout` | Revoke tokens upstream, destroy session, clear cookie (CSRF-protected). A server-side delete failure answers `500 logout_incomplete` instead of pretending (P3-28). |
 | `POST /bff/elevate` | Tier-0 step-up: re-auth at Socrate with the session token; captures the fresh token into the session (CSRF-protected; nothing to the browser). |
 | `ANY /api/admin/**` | Allowlisted reverse proxy; injects the session token (Phase 2) or passes through (Phase 1), SSE-aware. Mutating methods require a valid `X-CSRF-Token`. |
 | anything else | `404` — the BFF is an allowlist, never an open proxy. |
@@ -99,8 +99,26 @@ Wire it into Caddy with [`Caddyfile.example`](./Caddyfile.example).
 
 ## Security notes
 
-- No third-party dependencies — standard library only (minimal supply-chain
-  surface, consistent with a Tier-0 component).
+- Dependencies: the shared `backendkit/bff` gateway and `pgx` (for the optional
+  Postgres store) — nothing else.
 - Allowlist, not an open proxy: only `/bff/*` and `/api/admin/*` are served.
-- Phase 2 sets `Secure` cookies based on `X-Forwarded-Proto` from Caddy and must
-  trust forwarded headers only from the Caddy edge.
+  Requests whose path is not already canonical (`..`, `.`, `//`, or
+  percent-encoded dot-segments such as `%2e%2e`) are refused outright (P3-18),
+  so the allowlist decision and the upstream's routing decision are always
+  made on the same string.
+- Client IP for the per-IP budgets: `X-Forwarded-For` is honoured only when
+  the TCP peer is loopback (Caddy on the same host, which replaces any
+  client-supplied header); from any other peer it is ignored (P3-17).
+- `/bff/elevate` forwards the admin API's `4xx` challenge so the step-up dialog
+  can re-prompt, never an upstream `5xx` body, and treats a `200` without a
+  usable `access_token`/`expires_in` as a failure (P3-21).
+- **Tokens at rest (P3-30).** With `BFF_SESSION_DSN` set, each session row's
+  `data` column holds the OAuth access **and refresh token in plaintext**.
+  Anyone who can read the table (or a dump of it) holds every active
+  operator's session. Mitigations in place: the BFF's DB role should own only
+  `bff_sessions` / `bff_login_states`; `deploy/scripts/backup-db.sh` excludes
+  those rows from dumps; sessions are short-lived and revoked at logout.
+  Envelope encryption of the `data` column (AES-GCM with a key from the BFF
+  env) is the next step if the database is shared or backed up elsewhere.
+- Every Postgres statement result is logged on failure (P3-28); the store
+  fails closed (a read error is "no session").

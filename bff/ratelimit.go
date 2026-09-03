@@ -61,6 +61,9 @@ func (rl *rateLimiter) allow(key string) (bool, time.Duration) {
 
 // sweep drops windows that have already rolled over, bounding memory.
 func (rl *rateLimiter) sweep() {
+	if rl == nil {
+		return
+	}
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	now := rl.now()
@@ -71,22 +74,31 @@ func (rl *rateLimiter) sweep() {
 	}
 }
 
-// clientIP returns the caller's IP for rate-limiting. The BFF sits behind a
-// trusted local reverse proxy (Caddy) that sets X-Forwarded-For, so use its
-// left-most entry when present, else the connection's remote address.
+// clientIP returns the caller's IP for rate-limiting.
+//
+// The BFF is designed to sit behind Caddy on the same host: Caddy is the only
+// public listener, connects over loopback, and (with its default
+// trusted_proxies = none) REPLACES any client-supplied X-Forwarded-For with the
+// real peer address. So the left-most X-Forwarded-For entry is trustworthy
+// exactly when the TCP peer is loopback. P3-17: for any other peer — the BFF
+// bound to a non-loopback address, or a test/dev setup with no proxy — the
+// header is attacker-controlled and is ignored in favour of the peer address,
+// otherwise a client could rotate keys freely and defeat the budgets.
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		first := xff
-		if i := strings.IndexByte(xff, ','); i >= 0 {
-			first = xff[:i]
-		}
-		if ip := strings.TrimSpace(first); ip != "" {
-			return ip
-		}
-	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			first := xff
+			if i := strings.IndexByte(xff, ','); i >= 0 {
+				first = xff[:i]
+			}
+			if fwd := strings.TrimSpace(first); fwd != "" && net.ParseIP(fwd) != nil {
+				return fwd
+			}
+		}
 	}
 	return host
 }

@@ -65,6 +65,14 @@ func (m *MemorySessionStore) TakeLogin(state string) (loginState, bool) {
 	return ls, ok
 }
 
+// Touch persists a slid idle window only while the session still exists, so a
+// /bff/session racing a logout cannot re-insert a deleted session (P3-29).
+func (m *MemorySessionStore) Touch(sess *bff.Session) {
+	if _, ok := m.MemoryStore.Get(sess.ID()); ok {
+		m.MemoryStore.Put(sess)
+	}
+}
+
 // Sweep prunes expired sessions (via the embedded bff.MemoryStore.Sweep) and
 // stale login state. It shadows the promoted bff.MemoryStore.Sweep so callers
 // going through the SessionStore interface get both behaviors.

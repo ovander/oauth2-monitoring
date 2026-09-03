@@ -59,24 +59,18 @@ Server URLs, the OAuth client, and scopes are owned by the **BFF**, not the SPA
 
 ## Production Build
 
-### Docker (recommended)
+### Deploy kit (recommended)
 
-```bash
-# Build image
-docker build \
-  --build-arg VITE_ADMIN_URL=https://admin.example.com \
-  --build-arg VITE_OAUTH_URL=https://auth.example.com \
-  --build-arg VITE_CLIENT_ID=security-monitor \
-  --build-arg VITE_REDIRECT_URI=https://monitor.example.com/callback \
-  --build-arg VITE_SCOPES=openid,profile,email \
-  --build-arg VITE_ADMIN_ROLES=admin,monitor_admin \
-  -t oauth2-monitor:latest .
+Production deployment is the single-VPS kit in [`deploy/`](deploy/): Caddy is
+the only public listener, the built SPA is served from a root-owned directory
+and the Go BFF runs as a hardened systemd unit. Build locally, then
+`VPS_HOST=user@host deploy/scripts/push.sh` — see
+[`deploy/README.md`](deploy/README.md).
 
-# Run (enable the /api/ proxy by setting ADMIN_URL)
-docker run -p 80:80 \
-  -e ADMIN_URL=http://admin-backend:8081 \
-  oauth2-monitor:latest
-```
+The earlier root `Dockerfile` / `nginx.conf` / `.env.production` described the
+retired browser-held-token architecture (a public PKCE client hitting the admin
+API directly) and were removed (P3-25). The BFF still ships its own distroless
+image: `docker build -t socrate-monitoring-bff bff/`.
 
 ### Vite build only
 
@@ -84,10 +78,6 @@ docker run -p 80:80 \
 npm run build        # outputs to dist/
 npm run preview      # preview production build locally
 ```
-
-### Nginx proxy (optional)
-
-The bundled `nginx.conf` includes a commented-out `/api/` proxy block. To enable it, set `ADMIN_URL` at runtime via `envsubst` or a Docker env variable and uncomment the block in `nginx.conf`.
 
 ---
 
