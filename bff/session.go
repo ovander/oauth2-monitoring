@@ -12,7 +12,10 @@ import (
 type loginState struct {
 	Verifier string
 	ReturnTo string
-	Created  time.Time
+	// Nonce is the bff.LoginBinding value issued to the browser that started
+	// this login; the callback only completes for a browser presenting it.
+	Nonce   string
+	Created time.Time
 }
 
 // SessionStore persists authenticated sessions (delegated to bff.SessionStore)

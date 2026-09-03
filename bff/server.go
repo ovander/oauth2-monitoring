@@ -28,6 +28,7 @@ type Server struct {
 	store   SessionStore
 	oauth   *oauthClient
 	gateway *bff.Gateway
+	login   bff.LoginBinding // ties /bff/login to the browser that must finish it at /bff/callback
 
 	loginLimiter   *rateLimiter // per-IP budget for /bff/login
 	elevateLimiter *rateLimiter // per-IP budget for /bff/elevate
@@ -55,6 +56,7 @@ func NewServerWithStore(cfg *Config, store SessionStore) *Server {
 		}
 		s.store = store
 		s.oauth = newOAuthClient(cfg)
+		s.login = bff.LoginBinding{Cookie: bff.CookieConfig{Name: "mon_login", Secure: cfg.CookieSecure}, TTL: 10 * time.Minute}
 		s.loginLimiter = newRateLimiter(cfg.LoginRate, rateWindow)
 		s.elevateLimiter = newRateLimiter(cfg.ElevateRate, rateWindow)
 		s.gateway = &bff.Gateway{
@@ -64,8 +66,9 @@ func NewServerWithStore(cfg *Config, store SessionStore) *Server {
 				Secure: cfg.CookieSecure,
 				MaxAge: 0,
 			},
-			Refresher:        tokenRefresherAdapter{s.oauth},
-			AuthEnabled:      true,
+			Refresher: tokenRefresherAdapter{s.oauth},
+			// backendkit >= v1.11.0: the gateway is fail-closed by default
+			// (DisableAuth zero value); only constructed when auth is enabled.
 			AllowPassthrough: cfg.AllowPassthrough,
 		}
 	}

@@ -22,9 +22,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	state := bff.RandomToken(32)
 	verifier := bff.RandomToken(32)
+	// P3-15: bind the pending login to this browser. The callback must present
+	// the nonce cookie issued here, so a captured callback URL cannot log a
+	// different browser into the attacker's session.
+	nonce := s.login.Begin(w)
 	s.store.PutLogin(state, loginState{
 		Verifier: verifier,
 		ReturnTo: bff.SanitizeReturnTo(r.URL.Query().Get("return_to")),
+		Nonce:    nonce,
 		Created:  time.Now(),
 	})
 	http.Redirect(w, r, s.oauth.authorizeURL(state, bff.S256Challenge(verifier)), http.StatusFound)
@@ -39,9 +44,15 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state, code := q.Get("state"), q.Get("code")
-	ls, ok := s.store.TakeLogin(state) // single-use; also guards CSRF on the callback
+	ls, ok := s.store.TakeLogin(state) // single-use: the callback is single-shot
 	if !ok || code == "" {
 		http.Error(w, "invalid or expired login state", http.StatusBadRequest)
+		return
+	}
+	// The login-binding cookie proves this is the browser that started the
+	// login (P3-15). Verify clears the cookie either way.
+	if !s.login.Verify(w, r, ls.Nonce) {
+		http.Error(w, "login was not started by this browser", http.StatusBadRequest)
 		return
 	}
 
@@ -129,10 +140,17 @@ func (s *Server) handleElevate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Make sure the session's access token is fresh before we use it against
-	// the upstream elevate endpoint; a refresh failure invalidates the session.
+	// the upstream elevate endpoint. Same policy as the shared proxy: only a
+	// refresh the issuer REJECTS kills the session (and clears the cookie,
+	// P2-16); a transient token-endpoint failure is a 502 the SPA can retry.
 	if _, err := s.gateway.EnsureFresh(r.Context(), sess); err != nil {
-		s.store.Delete(sess.ID())
-		writeJSON(w, map[string]any{"error": "session expired"}, http.StatusUnauthorized)
+		if bff.IsFatalRefreshError(err) {
+			s.store.Delete(sess.ID())
+			s.gateway.Cookie.ClearSession(w)
+			writeJSON(w, map[string]any{"error": "session expired"}, http.StatusUnauthorized)
+			return
+		}
+		writeJSON(w, map[string]any{"error": "token_refresh_unavailable"}, http.StatusBadGateway)
 		return
 	}
 
