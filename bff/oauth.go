@@ -105,19 +105,21 @@ func (o *oauthClient) token(ctx context.Context, form url.Values) (*tokenRespons
 	}
 	defer resp.Body.Close()
 
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	var tr tokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tr); err != nil {
-		return nil, fmt.Errorf("decode token response: %w", err)
+	_ = json.Unmarshal(body, &tr) // an error body is reported through OAuthError below
+	if resp.StatusCode != http.StatusOK {
+		// Typed so bff.IsFatalRefreshError can tell a rejected grant
+		// (invalid_grant: the session is dead) from a token-endpoint outage
+		// (5xx: keep the session, answer 502).
+		oe := &socrate.OAuthError{StatusCode: resp.StatusCode, Code: tr.Error, Description: tr.ErrorDesc}
+		if oe.Code == "" {
+			oe.Description = strings.TrimSpace(string(body))
+		}
+		return nil, oe
 	}
-	if resp.StatusCode != http.StatusOK || tr.AccessToken == "" {
-		msg := tr.Error
-		if tr.ErrorDesc != "" {
-			msg = tr.ErrorDesc
-		}
-		if msg == "" {
-			msg = resp.Status
-		}
-		return nil, fmt.Errorf("token endpoint: %s", msg)
+	if tr.AccessToken == "" {
+		return nil, fmt.Errorf("token response missing access_token")
 	}
 	return &tr, nil
 }

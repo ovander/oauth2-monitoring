@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -27,14 +28,36 @@ type phase2Harness struct {
 	elevatedToken string
 	elevateStatus int      // status the mock elevate endpoint returns (default 200)
 	revoked       []string // tokens the mock /oauth/revoke endpoint received
+
+	// expiresIn is the access-token lifetime the mock token endpoint reports
+	// (default 3600). 0 makes every session start expired so the next proxied
+	// request must refresh.
+	expiresIn int
+	// refreshStatus, when non-zero, makes the refresh_token grant fail with
+	// that HTTP status (400 → invalid_grant JSON body, otherwise a bare 5xx).
+	refreshStatus int
+	// The mock token endpoint rotates single-use refresh tokens (rt-1, rt-2, …)
+	// like Socrate does; re-using a spent one is an invalid_grant.
+	refreshCalls int
+	usedRefresh  map[string]bool
 }
 
 func newPhase2Harness(t *testing.T) *phase2Harness {
+	t.Helper()
+	return newPhase2HarnessWithStore(t, nil)
+}
+
+// newPhase2HarnessWithStore builds the harness around an injected SessionStore
+// (nil → the default in-memory store), so tests can exercise a durable store's
+// rehydrate-per-Get semantics through the real handlers.
+func newPhase2HarnessWithStore(t *testing.T, store SessionStore) *phase2Harness {
 	t.Helper()
 	h := &phase2Harness{
 		accessToken:   makeJWT(map[string]any{"sub": "u1", "email": "a@b.c", "name": "Admin A"}),
 		elevatedToken: makeJWT(map[string]any{"sub": "u1", "auth_time": 1}),
 		elevateStatus: 200,
+		expiresIn:     3600,
+		usedRefresh:   map[string]bool{},
 	}
 
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -45,9 +68,27 @@ func newPhase2Harness(t *testing.T) *phase2Harness {
 			return
 		}
 		h.tokenForm = r.Form
+		refresh := "rt-1"
+		if r.Form.Get("grant_type") == "refresh_token" {
+			if h.refreshStatus == http.StatusBadRequest {
+				writeJSON(w, map[string]any{"error": "invalid_grant", "error_description": "forced"}, http.StatusBadRequest)
+				return
+			}
+			if h.refreshStatus != 0 {
+				w.WriteHeader(h.refreshStatus)
+				return
+			}
+			if spent := r.Form.Get("refresh_token"); h.usedRefresh[spent] {
+				writeJSON(w, map[string]any{"error": "invalid_grant", "error_description": "refresh token reuse"}, http.StatusBadRequest)
+				return
+			}
+			h.usedRefresh[r.Form.Get("refresh_token")] = true
+			h.refreshCalls++
+			refresh = "rt-" + strconv.Itoa(h.refreshCalls+1)
+		}
 		writeJSON(w, map[string]any{
-			"access_token": h.accessToken, "refresh_token": "rt-1", "id_token": "id-1",
-			"token_type": "Bearer", "expires_in": 3600,
+			"access_token": h.accessToken, "refresh_token": refresh, "id_token": "id-1",
+			"token_type": "Bearer", "expires_in": h.expiresIn,
 			"roles": []string{"admin"}, "app_roles": map[string]string{"mon-client": "monitor_admin"},
 		})
 	}))
@@ -81,8 +122,19 @@ func newPhase2Harness(t *testing.T) *phase2Harness {
 	}
 	ou, _ := url.Parse(cfg.OAuthUpstream)
 	cfg.oauthURL = ou
-	h.srv = NewServer(cfg)
+	h.srv = NewServerWithStore(cfg, store)
 	return h
+}
+
+// loginCookie returns the login-binding cookie issued by /bff/login, which the
+// browser must present at /bff/callback.
+func loginCookie(rec *httptest.ResponseRecorder) *http.Cookie {
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "mon_login" && c.Value != "" {
+			return c
+		}
+	}
+	return nil
 }
 
 func (h *phase2Harness) do(method, target string, cookie *http.Cookie) *httptest.ResponseRecorder {
@@ -126,8 +178,13 @@ func TestPhase2_FullFlow(t *testing.T) {
 		t.Fatal("missing state")
 	}
 
-	// 2) callback → exchange, set cookie, redirect.
-	cb := h.do(http.MethodGet, "/bff/callback?state="+state+"&code=authcode", nil)
+	// 2) callback → exchange, set cookie, redirect. The login-binding cookie
+	// issued at /bff/login must travel with it.
+	lc := loginCookie(login)
+	if lc == nil || !lc.HttpOnly || lc.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("login-binding cookie missing or weak: %+v", lc)
+	}
+	cb := h.do(http.MethodGet, "/bff/callback?state="+state+"&code=authcode", lc)
 	if cb.Code != http.StatusFound {
 		t.Fatalf("callback: got %d, want 302 (body: %s)", cb.Code, cb.Body.String())
 	}
@@ -298,7 +355,7 @@ func (h *phase2Harness) login(t *testing.T) (*http.Cookie, string) {
 	t.Helper()
 	login := h.do(http.MethodGet, "/bff/login", nil)
 	loc, _ := url.Parse(login.Header().Get("Location"))
-	cb := h.do(http.MethodGet, "/bff/callback?state="+loc.Query().Get("state")+"&code=c", nil)
+	cb := h.do(http.MethodGet, "/bff/callback?state="+loc.Query().Get("state")+"&code=c", loginCookie(login))
 	cookie := sessionCookie(cb)
 	if cookie == nil {
 		t.Fatal("login failed: no session cookie")
