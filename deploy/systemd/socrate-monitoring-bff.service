@@ -8,8 +8,11 @@ Requires=socrate.service
 
 [Service]
 Type=simple
-User=socrate
-Group=socrate
+# P4-1: the BFF is the internet-facing parser and must not share an identity
+# with the identity server. Its own user cannot read Socrate's signing keys,
+# Socrate's env (SECRET_KEY_BASE, DATABASE_URL) or the admin BFF's secrets.
+User=socrate-mon-bff
+Group=socrate-mon-bff
 EnvironmentFile=/etc/socrate/bff.env
 ExecStart=/usr/local/bin/socrate-monitoring-bff
 Restart=on-failure
@@ -36,6 +39,9 @@ SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
 CapabilityBoundingSet=
 AmbientCapabilities=
+# Belt and braces on top of the dedicated user: even if the user split is
+# undone by hand, these paths do not exist inside this unit's mount namespace.
+InaccessiblePaths=-/var/lib/socrate -/etc/socrate/socrate.env -/etc/socrate/admin-bff.env
 
 [Install]
 WantedBy=multi-user.target

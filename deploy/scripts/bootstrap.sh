@@ -9,11 +9,17 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 deploy_dir="$(cd "$here/.." && pwd)"
 
-echo "▶ creating service user 'socrate' (no login)…"
-id -u socrate >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin socrate
+echo "▶ creating service users (no login)…"
+# One OS user per service (P4-1): the identity server owns the signing keys
+# and its env; each BFF runs as its own user and can read only its own env.
+for u in socrate socrate-mon-bff; do
+  id -u "$u" >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin "$u"
+done
 
 echo "▶ creating directories…"
-install -d -o socrate -g socrate /srv/monitoring/dist /srv/admin/dist
+# SPA trees are root-owned, world-readable: Caddy only reads them and no
+# service user may rewrite the JavaScript it serves (P3-25 / P4-1).
+install -d -o root -g root -m 0755 /srv/monitoring/dist /srv/admin/dist
 install -d -o root    -g root    /etc/socrate
 install -d -o root    -g root    /var/backups/socrate
 # Socrate signing keys (writable for rotation, KEYS_PATH) + optional GeoIP data.
@@ -25,17 +31,21 @@ cp "$deploy_dir/systemd/socrate.service"                 /etc/systemd/system/
 cp "$deploy_dir/systemd/socrate-monitoring-bff.service"  /etc/systemd/system/
 systemctl daemon-reload
 
-echo "▶ seeding env files (fill in secrets, then chmod 600)…"
-for f in socrate bff; do
-  if [ ! -f "/etc/socrate/$f.env" ]; then
-    cp "$deploy_dir/env/$f.env.example" "/etc/socrate/$f.env"
-    chown root:socrate "/etc/socrate/$f.env"
-    chmod 0640 "/etc/socrate/$f.env"
-    echo "  · /etc/socrate/$f.env created — EDIT IT (secrets)"
+echo "▶ seeding env files (fill in secrets)…"
+# Each env file is readable only by root and the ONE service that needs it.
+seed_env() { # name owner-group
+  local f="/etc/socrate/$1.env"
+  if [ ! -f "$f" ]; then
+    cp "$deploy_dir/env/$1.env.example" "$f"
+    echo "  · $f created — EDIT IT (secrets)"
   else
-    echo "  · /etc/socrate/$f.env exists — left untouched"
+    echo "  · $f exists — left untouched (ownership refreshed)"
   fi
-done
+  chown "root:$2" "$f"
+  chmod 0640 "$f"
+}
+seed_env socrate socrate
+seed_env bff socrate-mon-bff
 
 echo "▶ installing Caddy site…"
 if [ -d /etc/caddy ]; then

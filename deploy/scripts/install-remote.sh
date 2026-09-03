@@ -32,6 +32,10 @@ install_bin socrate-seed
 # 2) Monitoring SPA static (atomic-ish: rsync with --delete).
 if [ -d "$artifacts/monitoring/dist" ]; then
   rsync -a --delete "$artifacts/monitoring/dist/" "$web_mon/"
+  # Root-owned, read-only for everyone else (Caddy reads; no service user may
+  # modify the served SPA). P3-25 / P4-1
+  chown -R root:root "$web_mon"
+  find "$web_mon" -type d -exec chmod 0755 {} + -o -type f -exec chmod 0644 {} +
   echo "  · monitoring SPA synced → $web_mon"
 fi
 
