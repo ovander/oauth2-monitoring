@@ -77,6 +77,8 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 // GET /bff/session — SPA bootstrap: who am I (and the CSRF token).
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
+	// P3-20: the body carries the CSRF token and identity — never cacheable.
+	w.Header().Set("Cache-Control", "no-store")
 	sess := s.currentSession(w, r)
 	if sess == nil {
 		writeJSON(w, map[string]any{"authenticated": false})
@@ -93,13 +95,23 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 // clear the cookie. Mutating route, so it carries the same double-submit CSRF
 // check as the other state-changing endpoints.
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if sess := s.currentSession(w, r); sess != nil {
-		if !sess.MatchCSRF(r.Header.Get("X-CSRF-Token")) {
+		if !sess.MatchCSRF(r.Header.Get(bff.DefaultCSRFHeader)) {
 			writeJSON(w, map[string]any{"error": "invalid_csrf"}, http.StatusForbidden)
 			return
 		}
 		s.revokeSessionTokens(r.Context(), sess)
-		s.store.Delete(sess.ID())
+		if err := s.deleteSession(sess.ID()); err != nil {
+			// P3-28: the tokens were (best-effort) revoked upstream, but the
+			// session row is still there. Clear the cookie so this browser is
+			// out, and tell the SPA the logout did not fully complete rather
+			// than pretending it did.
+			log.Printf("bff: logout could not delete session: %v", err)
+			s.gateway.Cookie.ClearSession(w)
+			writeJSON(w, map[string]any{"error": "logout_incomplete"}, http.StatusInternalServerError)
+			return
+		}
 	}
 	s.gateway.Cookie.ClearSession(w)
 	w.WriteHeader(http.StatusNoContent)
@@ -134,10 +146,11 @@ func (s *Server) handleElevate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"error": "unauthenticated"}, http.StatusUnauthorized)
 		return
 	}
-	if !sess.MatchCSRF(r.Header.Get("X-CSRF-Token")) {
+	if !sess.MatchCSRF(r.Header.Get(bff.DefaultCSRFHeader)) {
 		writeJSON(w, map[string]any{"error": "invalid_csrf"}, http.StatusForbidden)
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
 
 	// Make sure the session's access token is fresh before we use it against
 	// the upstream elevate endpoint. Same policy as the shared proxy: only a
@@ -172,11 +185,19 @@ func (s *Server) handleElevate(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 	rb, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 
-	// Forward Socrate's error (invalid credentials, mfa_required, …) to the SPA.
+	// Forward Socrate's 4xx challenge (invalid credentials, mfa_required, …)
+	// to the SPA so the step-up dialog can re-prompt. P3-21: anything else is
+	// an upstream fault whose body (stack traces, proxy pages) must not reach
+	// the browser.
 	if resp.StatusCode != http.StatusOK {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(resp.StatusCode)
-		_, _ = w.Write(rb)
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(resp.StatusCode)
+			_, _ = w.Write(rb)
+			return
+		}
+		log.Printf("bff: elevate upstream returned %d", resp.StatusCode)
+		writeJSON(w, map[string]any{"error": "elevation_failed"}, http.StatusBadGateway)
 		return
 	}
 
@@ -186,16 +207,20 @@ func (s *Server) handleElevate(w http.ResponseWriter, r *http.Request) {
 		IDToken      string `json:"id_token"`
 		ExpiresIn    int    `json:"expires_in"`
 	}
-	_ = json.Unmarshal(rb, &lr)
-	if lr.AccessToken != "" {
-		ts := &socrate.TokenSet{
-			AccessToken:  lr.AccessToken,
-			RefreshToken: lr.RefreshToken,
-			IDToken:      lr.IDToken,
-			ExpiresIn:    lr.ExpiresIn,
-		}
-		sess.SetTokens(ts, time.Now())
-		s.store.Put(sess)
+	if err := json.Unmarshal(rb, &lr); err != nil || lr.AccessToken == "" || lr.ExpiresIn <= 0 {
+		// A 200 without a usable token is not a successful step-up; do not
+		// answer 204 (the SPA would retry the guarded action and get 403 again).
+		log.Printf("bff: elevate upstream 200 without a usable access_token/expires_in")
+		writeJSON(w, map[string]any{"error": "elevation_failed"}, http.StatusBadGateway)
+		return
 	}
+	ts := &socrate.TokenSet{
+		AccessToken:  lr.AccessToken,
+		RefreshToken: lr.RefreshToken,
+		IDToken:      lr.IDToken,
+		ExpiresIn:    lr.ExpiresIn,
+	}
+	sess.SetTokens(ts, time.Now())
+	s.store.Put(sess)
 	w.WriteHeader(http.StatusNoContent)
 }

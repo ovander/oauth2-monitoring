@@ -47,6 +47,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Audit production dependencies (high + critical)
+        # P3-31: the SPA ships only its runtime dependencies; build tooling
+        # (tailwind, vite, vitest) is dev-only and audited separately by
+        # Dependabot. A failing audit here blocks the merge.
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Unit tests
         run: npm run test:run
 

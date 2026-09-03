@@ -42,6 +42,10 @@ monitoring.vandermoten.eu {
 	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
 
 	# Auth + admin API → the BFF (the only client of the admin API for this app).
+	# Trust model (P3-17): the BFF honours X-Forwarded-For only from a loopback
+	# peer and relies on Caddy's default trusted_proxies (none) to REPLACE any
+	# client-supplied X-Forwarded-For with the real peer address. Do not add
+	# `trusted_proxies` unless a further proxy sits in front of Caddy.
 	@bff path /bff/* /api/admin/*
 	reverse_proxy @bff 127.0.0.1:8090 {
 		flush_interval -1            # stream SSE (/api/admin/events/stream) immediately

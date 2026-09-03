@@ -51,8 +51,12 @@ export function useApi() {
       }
     })
 
-    // No (or expired) session — re-authenticate at the BFF.
+    // No (or expired) session — re-authenticate at the BFF. P3-22: drop the
+    // cached identity first, so nothing (route guards, the SSE composable,
+    // a caller that swallows the error) keeps acting as if we were signed in
+    // between this 401 and the full-page navigation to /bff/login.
     if (response.status === 401) {
+      authStore.setUnauthenticated()
       authStore.login()
       throw new Error('Session expired')
     }

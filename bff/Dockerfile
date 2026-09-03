@@ -1,7 +1,8 @@
 # Socrate Monitoring BFF — multi-stage build → distroless static (nonroot) image.
-FROM golang:1.23-alpine AS build
+# Pinned to the toolchain go.mod / backendkit v1.12.0 build with (P3-25).
+FROM golang:1.26-alpine AS build
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /bff .

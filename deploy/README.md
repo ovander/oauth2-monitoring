@@ -186,6 +186,9 @@ every issued token becomes unverifiable).
 ```bash
 # Manual dump (keeps the newest 14 by default):
 sudo -u postgres bash oauth2-monitoring/deploy/scripts/backup-db.sh
+# The dump excludes the rows of bff_sessions / bff_login_states: with
+# BFF_SESSION_DSN set they hold live OAuth tokens in plaintext (P3-30), which
+# must never end up in a backup file. Sessions simply re-login after a restore.
 
 # Schedule it — /etc/cron.d/socrate-backup:
 30 3 * * *  postgres  /usr/local/bin/socrate-backup-db.sh >> /var/log/socrate-backup.log 2>&1
