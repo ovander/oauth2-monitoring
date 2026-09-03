@@ -96,7 +96,8 @@ monitoring BFF**.
 git clone https://github.com/ovander/oauth2-monitoring
 sudo bash oauth2-monitoring/deploy/scripts/bootstrap.sh   # users, dirs, units, Caddy, env stubs
 
-# Fill secrets (0640, root:socrate — bootstrap already set perms):
+# Fill secrets (bootstrap set the perms: socrate.env 0640 root:socrate,
+# bff.env 0640 root:socrate-mon-bff — each service reads only its own file):
 sudo vi /etc/socrate/socrate.env     # DATABASE_URL, SECRET_KEY_BASE, OAUTH_ISSUER, KEYS_PATH
 sudo vi /etc/socrate/bff.env
 
@@ -104,7 +105,13 @@ sudo vi /etc/socrate/bff.env
 sudo -u postgres createuser socrate
 sudo -u postgres createdb -O socrate socrate
 sudo -u postgres psql -c "ALTER ROLE socrate WITH PASSWORD 'the-db-password-from-above';"
-#   put that password into DATABASE_URL in socrate.env (and bff.env if BFF_SESSION_DSN is used).
+#   put that password into DATABASE_URL in socrate.env.
+# If the BFF's durable session store is used, give it its OWN role + database
+# (P4-1 — the BFF must not be able to read Socrate's tables):
+sudo -u postgres createuser socrate_bff
+sudo -u postgres createdb -O socrate_bff socrate_bff
+sudo -u postgres psql -c "ALTER ROLE socrate_bff WITH PASSWORD 'another-password';"
+#   → BFF_SESSION_DSN in bff.env
 
 # Schema migration, once:
 #   set AUTO_MIGRATE=true in socrate.env, start socrate, confirm it's up, set it back to false.
@@ -231,7 +238,7 @@ Top to bottom, the first time:
 - [ ] `ufw` allows only 22/80/443; `ufw status` confirms.
 - [ ] `caddy` + `postgresql` installed and running.
 - [ ] `bootstrap.sh` run; `/etc/socrate`, `/var/lib/socrate/keys`, `/srv/{monitoring,admin}/dist` exist.
-- [ ] `socrate.env` + `bff.env` filled (real `SECRET_KEY_BASE`, `DATABASE_URL`, `OAUTH_ISSUER`, `KEYS_PATH`); files `0640 root:socrate`.
+- [ ] `socrate.env` + `bff.env` filled (real `SECRET_KEY_BASE`, `DATABASE_URL`, `OAUTH_ISSUER`, `KEYS_PATH`); `socrate.env` is `0640 root:socrate`, `bff.env` is `0640 root:socrate-mon-bff`.
 - [ ] Postgres role + DB created; password set and matches `DATABASE_URL`.
 - [ ] Signing keys generated and copied to `/var/lib/socrate/keys` (`0700`, owner `socrate`).
 - [ ] Schema migrated once (`AUTO_MIGRATE=true` → start → back to `false`).
@@ -246,11 +253,16 @@ Top to bottom, the first time:
 
 - **No public admin plane:** `:8081` is loopback; the only public surface is
   Caddy on 443 across three subdomains.
-- **Least-privileged services:** the systemd units run as a no-login `socrate`
-  user with `ProtectSystem=strict`, `NoNewPrivileges`, dropped capabilities,
-  and a syscall allowlist.
-- **Secrets** live only in `/etc/socrate/*.env` (`0640`, owner `root:socrate`),
-  never in the repo or the SPA bundle.
+- **Least-privileged services:** the systemd units run as no-login users with
+  `ProtectSystem=strict`, `NoNewPrivileges`, dropped capabilities, and a
+  syscall allowlist. **One user per service (P4-1):** `socrate` owns the
+  signing keys and its env; the monitoring BFF runs as `socrate-mon-bff`
+  (the admin BFF as `socrate-admin-bff`, from its own kit) and additionally
+  masks `/var/lib/socrate` and the other services' env files with
+  `InaccessiblePaths`, so a compromised BFF cannot reach the private key,
+  `SECRET_KEY_BASE` or Socrate's database credentials.
+- **Secrets** live only in `/etc/socrate/*.env` (`0640`, owner `root:<that
+  service's user>`), never in the repo or the SPA bundle.
 - **Distroless option:** both Go services also ship Dockerfiles if you prefer
   containers; this kit targets native systemd for a single VPS.
 - **Admin console:** has its own BFF (`oauth2-admin/deploy/`), which installs
