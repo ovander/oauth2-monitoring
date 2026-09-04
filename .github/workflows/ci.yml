@@ -51,7 +51,13 @@ jobs:
         # P3-31: the SPA ships only its runtime dependencies; build tooling
         # (tailwind, vite, vitest) is dev-only and audited separately by
         # Dependabot. A failing audit here blocks the merge.
-        run: npm audit --omit=dev --audit-level=high
+        #
+        # Wrapper rather than a bare `npm audit`: the registry's advisory
+        # endpoint intermittently answers 503 or a spurious 400 "Invalid
+        # package tree", which a bare call cannot tell apart from a real
+        # advisory. The gate retries only the no-report case and still fails
+        # closed if the service never answers. See scripts/npm-audit-gate.sh.
+        run: ./scripts/npm-audit-gate.sh --omit=dev
 
       - name: Unit tests
         run: npm run test:run
