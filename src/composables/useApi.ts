@@ -21,7 +21,10 @@ import type {
   ReportRequest,
   ReportStatus,
   AdminAuditLogsResponse,
-  AuditIntegrity
+  AuditIntegrity,
+  PolicyDecisionFilter,
+  PolicyDecisionsResponse,
+  PolicySummaryResponse
 } from '@/types'
 
 export function useApi() {
@@ -442,6 +445,32 @@ export function useApi() {
     }
   }
 
+  // ─── Access policy decision log (Socrate A4) ───────────────────────────────
+  // Read-only, monitoring:read. The rules themselves are superadmin-only and
+  // live in the admin console.
+  async function fetchPolicyDecisions(filter: PolicyDecisionFilter = {}): Promise<PolicyDecisionsResponse> {
+    const q = new URLSearchParams()
+    if (filter.correlation_id) q.set('correlation_id', filter.correlation_id)
+    if (filter.allow !== undefined) q.set('allow', String(filter.allow))
+    if (filter.divergence) q.set('divergence', 'true')
+    if (filter.source) q.set('source', filter.source)
+    if (filter.client_id) q.set('client_id', filter.client_id)
+    if (filter.since) q.set('since', filter.since)
+    if (filter.before_id) q.set('before_id', String(filter.before_id))
+    q.set('limit', String(filter.limit ?? 100))
+    const response = await fetchWithAuth(`${getBaseUrl()}/api/admin/security/policy-decisions?${q}`)
+    if (!response.ok) throw new Error('Failed to fetch policy decisions')
+    const data = await response.json()
+    return { decisions: data.decisions || [], mode: data.mode || 'off' }
+  }
+
+  async function fetchPolicySummary(since?: string): Promise<PolicySummaryResponse> {
+    const q = since ? `?since=${encodeURIComponent(since)}` : ''
+    const response = await fetchWithAuth(`${getBaseUrl()}/api/admin/security/policy-decisions/summary${q}`)
+    if (!response.ok) throw new Error('Failed to fetch policy summary')
+    return response.json()
+  }
+
   function getAuditLogExportUrl(params: {
     admin_id?: number
     action?: string
@@ -483,6 +512,8 @@ export function useApi() {
     fetchReportStatus,
     getReportDownloadUrl,
     fetchAuditLogs,
-    getAuditLogExportUrl
+    getAuditLogExportUrl,
+    fetchPolicyDecisions,
+    fetchPolicySummary
   }
 }

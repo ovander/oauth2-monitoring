@@ -32,6 +32,9 @@ const router = createRouter({
     { path: '/tokens',    name: 'tokens',     component: () => import('@/views/TokensView.vue'),     meta: { requiresAuth: true } },
     { path: '/reports',   name: 'reports',    component: () => import('@/views/ReportsView.vue'),    meta: { requiresAuth: true } },
     { path: '/geo',       name: 'geo',        component: () => import('@/views/GeoView.vue'),        meta: { requiresAuth: true } },
+    // Socrate A4: the access-policy decision log. Read-only (monitoring:read);
+    // the rules themselves are edited in the admin console.
+    { path: '/policy-decisions', name: 'policy-decisions', component: () => import('@/views/PolicyDecisionsView.vue'), meta: { requiresAuth: true } },
 
     // ── Admin routes (write access — monitor_admin, admin only) ───────────────
     { path: '/alerts',      name: 'alerts',      component: () => import('@/views/AlertsView.vue'),      meta: { requiresAuth: true, requiresAdmin: true } },
