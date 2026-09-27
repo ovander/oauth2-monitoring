@@ -1,6 +1,8 @@
 # Socrate Monitoring BFF — multi-stage build → distroless static (nonroot) image.
-# Pinned to the toolchain go.mod / backendkit v1.12.0 build with (P3-25).
-FROM golang:1.26-alpine AS build
+# Pinned to the exact patch release in go.mod's toolchain line; CI fails if the
+# two drift (P3-25). The golang images set GOTOOLCHAIN=local, so this tag is
+# the Go that compiles the shipped binary.
+FROM golang:1.26.8-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

@@ -103,7 +103,7 @@ func (o *oauthClient) token(ctx context.Context, form url.Values) (*tokenRespons
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	var tr tokenResponse
@@ -152,7 +152,7 @@ func (o *oauthClient) revoke(ctx context.Context, token, hint string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode/100 != 2 {
 		return fmt.Errorf("revoke endpoint: %s", resp.Status)

@@ -1,0 +1,26 @@
+# golangci-lint configuration (v2) — the same curated set as go-oauth2 (RFC-014).
+#
+# A curated, deterministic linter set so CI results don't drift with tool
+# defaults across versions. errcheck is excluded in *_test.go because unchecked
+# cleanup calls (Close/Setenv/RemoveAll) there are noise, not defects.
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+
+# Report every finding (the defaults cap same/total issues, which would hide
+# duplicates and make the gate unstable as fixes reveal the next batch).
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

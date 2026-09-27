@@ -182,7 +182,7 @@ func (s *Server) handleElevate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"error": "elevation_failed"}, http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	rb, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 
 	// Forward Socrate's 4xx challenge (invalid credentials, mfa_required, …)

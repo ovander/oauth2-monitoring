@@ -23,12 +23,50 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version-file: bff/go.mod
           cache-dependency-path: bff/go.sum
+
+      # bff/go.mod's toolchain line is the single source of truth: fail if this
+      # job compiled with another Go, or if the Dockerfile's image (what
+      # actually ships) has drifted from it.
+      - name: Toolchain matches bff/go.mod (CI and Dockerfile)
+        working-directory: bff
+        run: |
+          want=$(awk '/^toolchain /{print $2}' go.mod)
+          got=$(go env GOVERSION)
+          image=go$(sed -nE 's/^FROM golang:([0-9.]+)-alpine.*/\1/p' Dockerfile)
+          echo "go.mod toolchain: $want · CI: $got · Dockerfile: $image"
+          test -n "$want" && test "$got" = "$want" && test "$image" = "$want"
 
       - name: Vet + race-enabled tests
         run: go vet ./... && go test -race ./...
         working-directory: bff
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # BFF (Go) — golangci-lint
+  # ──────────────────────────────────────────────────────────────────────────
+  bff-lint:
+    name: BFF golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: bff/go.mod
+          cache-dependency-path: bff/go.sum
+
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+          working-directory: bff
+          # Build golangci-lint with bff/go.mod's toolchain: a prebuilt binary
+          # compiled with an older Go refuses a module whose toolchain targets
+          # a newer one. Config: bff/.golangci.yml (go-oauth2's curated set).
+          install-mode: goinstall
+          # Skip the action's `config verify`, which fetches a JSON schema at
+          # runtime and fails CI on network blips unrelated to the code.
+          verify: false
 
   # ──────────────────────────────────────────────────────────────────────────
   # SPA — unit tests + production build

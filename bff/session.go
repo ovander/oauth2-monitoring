@@ -68,8 +68,10 @@ func (m *MemorySessionStore) TakeLogin(state string) (loginState, bool) {
 // Touch persists a slid idle window only while the session still exists, so a
 // /bff/session racing a logout cannot re-insert a deleted session (P3-29).
 func (m *MemorySessionStore) Touch(sess *bff.Session) {
-	if _, ok := m.MemoryStore.Get(sess.ID()); ok {
-		m.MemoryStore.Put(sess)
+	// The embedded store is named on purpose: Touch must reach the underlying
+	// session map even if this type ever overrides Get or Put.
+	if _, ok := m.MemoryStore.Get(sess.ID()); ok { //nolint:staticcheck // QF1008: explicit on purpose, see above
+		m.MemoryStore.Put(sess) //nolint:staticcheck // QF1008: explicit on purpose, see above
 	}
 }
 
