@@ -23,8 +23,20 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version-file: bff/go.mod
           cache-dependency-path: bff/go.sum
+
+      # bff/go.mod's toolchain line is the single source of truth: fail if this
+      # job compiled with another Go, or if the Dockerfile's image (what
+      # actually ships) has drifted from it.
+      - name: Toolchain matches bff/go.mod (CI and Dockerfile)
+        working-directory: bff
+        run: |
+          want=$(awk '/^toolchain /{print $2}' go.mod)
+          got=$(go env GOVERSION)
+          image=go$(sed -nE 's/^FROM golang:([0-9.]+)-alpine.*/\1/p' Dockerfile)
+          echo "go.mod toolchain: $want · CI: $got · Dockerfile: $image"
+          test -n "$want" && test "$got" = "$want" && test "$image" = "$want"
 
       - name: Vet + race-enabled tests
         run: go vet ./... && go test -race ./...
