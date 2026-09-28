@@ -629,3 +629,61 @@ export const SEVERITY_LABELS: Record<Severity, string> = {
   error: 'Error',
   critical: 'Critical'
 }
+
+// ─── Access policy decision log (Socrate A4) ─────────────────────────────────
+// GET /api/admin/security/policy-decisions — denials and divergences only.
+
+export interface PolicyDecisionRecord {
+  id: number
+  created_at: string
+  correlation_id?: string
+  /** "admin_pep" (the admin API) or "decide_api" (an application asked). */
+  source: string
+  mode: string
+  /** True when the decision was taken in enforce mode — a real refusal. */
+  enforced: boolean
+  allow: boolean
+  /** "pdp_deny_code_allow" | "pdp_allow_code_deny" — disagreement with the built-in checks. */
+  divergence?: string
+  action: string
+  rule?: string
+  reason: string
+  policy_version: number
+  principal_kind?: string
+  principal_id?: number
+  client_id?: string
+  resource_type?: string
+  resource_id?: string
+  ip_address?: string
+  status_code?: number
+}
+
+export interface PolicyDecisionFilter {
+  correlation_id?: string
+  allow?: boolean
+  divergence?: boolean
+  source?: string
+  client_id?: string
+  since?: string
+  before_id?: number
+  limit?: number
+}
+
+export interface PolicyDecisionsResponse {
+  decisions: PolicyDecisionRecord[]
+  mode: string
+}
+
+export interface PolicyDecisionSummary {
+  since: string
+  denials: number
+  enforced_denials: number
+  divergences: Record<string, number>
+  denials_by_source: Record<string, number>
+}
+
+export interface PolicySummaryResponse {
+  mode: string
+  policy_version: number
+  summary: PolicyDecisionSummary
+}
