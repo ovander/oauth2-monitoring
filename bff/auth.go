@@ -176,6 +176,8 @@ func (s *Server) handleElevate(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Header.Set("Authorization", "Bearer "+sess.AccessToken())
 	req.Header.Set("Content-Type", "application/json")
+	// A password check for the browser: attribute it (see attribution.go).
+	socrate.ApplyClientAttribution(req)
 
 	resp, err := s.oauth.http.Do(req)
 	if err != nil {

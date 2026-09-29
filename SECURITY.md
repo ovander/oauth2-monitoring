@@ -73,6 +73,13 @@ cannot exfiltrate a replayable credential.
 - **Per-IP budgets** on `/bff/login` and `/bff/elevate`. `X-Forwarded-For` is honoured only when
   the TCP peer is loopback (Caddy, which replaces any client-supplied value); from any other peer
   it is ignored. Client-supplied IP-attribution headers are stripped before proxying.
+- **X-Forwarded-For toward Socrate.** Socrate trusts the left-most `X-Forwarded-For` entry from
+  loopback, and the BFF reaches it over loopback, so the BFF forwards only the client IP it
+  resolved itself (the rule above), never a browser-supplied value. Its own calls (code
+  exchange, refresh, revocation, step-up) set `X-Forwarded-For` to exactly that address and
+  send the browser's `User-Agent`; proxied requests drop the inbound header and send
+  `<client IP>, <BFF peer>`. A peer that reaches the BFF without Caddy therefore cannot choose
+  the address Socrate audits, rate-limits or blocks it as.
 - **Logout revokes** the refresh and access tokens at the issuer (RFC 7009, best effort), then
   deletes the session and clears the cookie; a failed server-side delete answers
   `500 logout_incomplete` rather than pretending.

@@ -60,7 +60,7 @@ func NewServerWithStore(cfg *Config, store SessionStore) *Server {
 		r.Host = cfg.adminURL.Host
 	}
 
-	s := &Server{cfg: cfg, proxy: proxy}
+	s := &Server{cfg: cfg, proxy: attributedProxy(proxy)}
 	if cfg.oauthURL != nil {
 		s.version = newVersionProxy(cfg.oauthURL)
 	}
@@ -107,7 +107,9 @@ func (s *Server) Handler() http.Handler {
 	if s.version != nil {
 		mux.Handle(versionRoute, s.version)
 	}
-	return canonicalPathOnly(mux)
+	// Outermost: every Socrate call made for this request (login exchange,
+	// refresh, revoke, step-up, proxied calls) is attributed to the browser.
+	return withClientAttribution(canonicalPathOnly(mux))
 }
 
 // newVersionProxy builds the reverse proxy for the public GET /api/version
@@ -132,7 +134,7 @@ func newVersionProxy(upstream *url.URL) *httputil.ReverseProxy {
 		r.Header.Del("Authorization")
 		r.Header.Del("Cookie")
 	}
-	return p
+	return attributedProxy(p)
 }
 
 // canonicalPathOnly rejects any request whose path is not already in canonical

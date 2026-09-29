@@ -6,6 +6,18 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+### Security
+
+- **Browser attribution toward Socrate, and no forged `X-Forwarded-For` through the proxy.** The
+  BFF now tells Socrate which browser each call is for (`bff/attribution.go`, backendkit
+  v1.15.0 client attribution): the code exchange, refresh, logout revocations and step-up carry
+  `X-Forwarded-For: <client IP>` and the browser's `User-Agent` instead of appearing as
+  `127.0.0.1` / `Go-http-client`. Proxied requests (`/api/admin/*`, including the event stream,
+  and `/api/version`) used to append the peer to the inbound `X-Forwarded-For`, so a peer
+  reaching the BFF without Caddy could put a forged address left-most, where Socrate reads it;
+  they now send `<client IP>, <BFF peer>` with the client IP resolved by the BFF (from Caddy's
+  header only over loopback). No deploy step beyond the release; the Caddy site is unchanged.
+
 ### Changed
 
 - Build and CI toolchain: Node.js 20 (end of life since 2026-04-30) → Node.js 24 LTS; `.nvmrc` and `engines` pin it.
