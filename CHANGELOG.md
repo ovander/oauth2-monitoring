@@ -6,6 +6,14 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-29
+
+Patch release. The BFF attributes its own Socrate calls (sign-in, refresh, sign-out, step-up) to
+the browser, so Socrate audits and rate-limits the user's IP and User-Agent rather than the BFF,
+and no longer forwards a client-supplied `X-Forwarded-For`; builds move to Node.js 24. Requires
+backendkit v1.15.0. No Caddy change, no new environment variable. Works with Socrate v1.5.0 and
+later.
+
 ### Security
 
 - **Browser attribution toward Socrate, and no forged `X-Forwarded-For` through the proxy.** The
@@ -107,5 +115,6 @@ the badge).
 
 Changes before this changelog was introduced are in the git history.
 
-[Unreleased]: https://github.com/ovander/oauth2-monitoring/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/ovander/oauth2-monitoring/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/ovander/oauth2-monitoring/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ovander/oauth2-monitoring/releases/tag/v1.0.0
