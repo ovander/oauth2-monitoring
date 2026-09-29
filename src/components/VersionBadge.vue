@@ -1,13 +1,13 @@
 <template>
-  <div class="version-badge">
+  <div class="version-badge" :title="tooltip" :aria-label="tooltip">
     <span class="version-item">
       <span class="version-label">FE</span>
-      <span class="version-value">v{{ clientVersion }}</span>
+      <span class="version-value">{{ withVPrefix(clientVersion) }}</span>
     </span>
     <span class="version-sep">·</span>
     <span class="version-item">
       <span class="version-label">BE</span>
-      <span class="version-value">v{{ backendVersion }}</span>
+      <span class="version-value">{{ withVPrefix(backendVersion) }}</span>
       <span v-if="backendCommit !== '…'" class="version-commit">{{ backendCommit }}</span>
     </span>
     <span v-if="fetchError" class="version-error" title="Backend version endpoint unreachable">
@@ -17,9 +17,36 @@
 </template>
 
 <script setup lang="ts">
-import { useVersionInfo } from '@/composables/useVersionInfo'
+import { computed } from 'vue'
+import { useVersionInfo, withVPrefix } from '@/composables/useVersionInfo'
 
-const { clientVersion, backendVersion, backendCommit, fetchError } = useVersionInfo()
+const {
+  clientVersion, clientBuildDate, clientBuildNode, clientBuildVite,
+  backendVersion, backendCommit, backendBranch, backendBuildTime, backendGoVersion,
+  backendLoaded, fetchError,
+} = useVersionInfo()
+
+const consoleLine =
+  `Console ${withVPrefix(clientVersion)} — built ${clientBuildDate} ` +
+  `with Node ${clientBuildNode}, Vite ${clientBuildVite}`
+
+// Plain text only: bound to `title`/`aria-label`, which Vue escapes. Parts the
+// server did not send (older servers have no go_version) are left out.
+const serverLine = computed(() => {
+  if (fetchError.value) return 'Server version unavailable'
+  if (!backendLoaded.value) return 'Server version loading…'
+  let line = `Server ${withVPrefix(backendVersion.value)}`
+  const ref = [backendCommit.value, backendBranch.value].filter(v => v && v !== '…').join(', ')
+  if (ref) line += ` (${ref})`
+  if (backendBuildTime.value || backendGoVersion.value) {
+    line += ' — built'
+    if (backendBuildTime.value) line += ` ${backendBuildTime.value}`
+    if (backendGoVersion.value) line += ` with ${backendGoVersion.value}`
+  }
+  return line
+})
+
+const tooltip = computed(() => `${consoleLine}\n${serverLine.value}`)
 </script>
 
 <style scoped>

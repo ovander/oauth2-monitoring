@@ -8,6 +8,10 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ### Added
 
+- **Build toolchains in the version badge**: a plain-text tooltip (`title` and `aria-label`) shows
+  the console's version, build date, Node.js and Vite versions, and the server's version, commit,
+  branch, `build_time` and `go_version` (optional: servers up to v1.4.0 do not send it); the badge
+  no longer renders a doubled `v` ("vv1.4.2") for a server version that already starts with `v`.
 - **Light theme and theme toggle**: the console now opens in a light colour scheme (following the
   system setting on first visit) with a sun/moon toggle in the sidebar; the dark scheme moves from
   near-black to slate. The choice is kept in a `theme` preference cookie, not in browser storage.

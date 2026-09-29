@@ -1,4 +1,4 @@
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig, loadEnv, version as viteVersion } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath, URL } from 'node:url'
@@ -29,11 +29,15 @@ export default defineConfig(({ mode }) => {
   return {
   base: '/',
 
-  // Inject build-time version constants — available as __APP_VERSION__ and
-  // __APP_BUILD_DATE__ globally in all source files (declared in src/env.d.ts).
+  // Inject build-time version constants — available as __APP_VERSION__,
+  // __APP_BUILD_DATE__, __APP_BUILD_NODE__ (the Node.js that ran the build, e.g.
+  // "v20.18.0") and __APP_BUILD_VITE__ (the Vite version, e.g. "7.1.3") globally
+  // in all source files (declared in src/env.d.ts).
   define: {
     __APP_VERSION__:    JSON.stringify(pkg.version),
     __APP_BUILD_DATE__: JSON.stringify(new Date().toISOString()),
+    __APP_BUILD_NODE__: JSON.stringify(process.version),
+    __APP_BUILD_VITE__: JSON.stringify(viteVersion),
   },
 
   plugins: [
