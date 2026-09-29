@@ -13,6 +13,9 @@
  * Override the root level at runtime from the browser console:
  *   window.__setLogLevel('debug')   // verbose
  *   window.__setLogLevel('silent')  // nothing
+ * The override lasts until the page reloads: levels are never persisted, since
+ * the SPA keeps nothing in localStorage or sessionStorage (SECURITY.md).
+ * loglevel persists by default, so every setLevel passes `persist = false`.
  */
 
 import log from 'loglevel'
@@ -21,7 +24,23 @@ import type { Logger } from 'loglevel'
 // ─── Root level ──────────────────────────────────────────────────────────────
 
 const ROOT_LEVEL = import.meta.env.DEV ? 'debug' : 'warn'
-log.setDefaultLevel(ROOT_LEVEL as log.LogLevelDesc)
+
+// Earlier builds persisted levels ("loglevel", "loglevel:<name>"); drop them so
+// the browser holds nothing and a stale DEBUG cannot override ROOT_LEVEL.
+function purgePersistedLevels() {
+  try {
+    const storage = window.localStorage
+    for (let i = storage.length - 1; i >= 0; i--) {
+      const key = storage.key(i)
+      if (key === 'loglevel' || key?.startsWith('loglevel:')) storage.removeItem(key)
+    }
+  } catch {
+    // Storage unavailable (privacy mode): nothing was persisted there.
+  }
+}
+
+if (typeof window !== 'undefined') purgePersistedLevels()
+log.setLevel(ROOT_LEVEL as log.LogLevelDesc, false)
 
 // ─── Prefixed factory ─────────────────────────────────────────────────────────
 
@@ -34,25 +53,21 @@ log.setDefaultLevel(ROOT_LEVEL as log.LogLevelDesc)
  *   logger.debug('exchangeCode → POST', url)   // [auth] exchangeCode → POST …
  *   logger.warn('token refresh failed')
  */
+const prefixed = new Set<string>()
+
 export function useLogger(name: string): Logger {
   const logger = log.getLogger(name)
-  logger.setLevel(ROOT_LEVEL as log.LogLevelDesc)
+  if (prefixed.has(name)) return logger
+  prefixed.add(name)
 
-  // Wrap each method to prepend the bracketed namespace
-  const prefix = `[${name}]`
-  const original = {
-    trace: logger.trace.bind(logger),
-    debug: logger.debug.bind(logger),
-    info:  logger.info.bind(logger),
-    warn:  logger.warn.bind(logger),
-    error: logger.error.bind(logger),
+  // Prepend the bracketed namespace through loglevel's methodFactory hook, so the
+  // prefix survives every rebuild (setLevel, window.__setLogLevel) and is added once.
+  const base = logger.methodFactory
+  logger.methodFactory = (methodName, level, loggerName) => {
+    const raw = base(methodName, level, loggerName)
+    return (...args: unknown[]) => raw(`[${name}]`, ...args)
   }
-
-  logger.trace = (...args) => original.trace(prefix, ...args)
-  logger.debug = (...args) => original.debug(prefix, ...args)
-  logger.info  = (...args) => original.info (prefix, ...args)
-  logger.warn  = (...args) => original.warn (prefix, ...args)
-  logger.error = (...args) => original.error(prefix, ...args)
+  logger.setLevel(ROOT_LEVEL as log.LogLevelDesc, false) // also applies the factory
 
   return logger
 }
@@ -65,11 +80,9 @@ declare global {
 
 if (typeof window !== 'undefined') {
   window.__setLogLevel = (level: string) => {
-    log.setLevel(level as log.LogLevelDesc)
-    // Propagate to all named loggers
-    Object.keys((log as unknown as { loggers: Record<string, Logger> }).loggers ?? {}).forEach(k => {
-      log.getLogger(k).setLevel(level as log.LogLevelDesc)
-    })
+    log.setLevel(level as log.LogLevelDesc, false)
+    // Propagate to all named loggers (each has its own level, set in useLogger)
+    Object.values(log.getLoggers()).forEach(l => l.setLevel(level as log.LogLevelDesc, false))
     console.log(`[logger] level set to "${level}"`)
   }
 }

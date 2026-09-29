@@ -25,6 +25,13 @@ All notable changes to the Socrate monitoring console are documented here. The f
 
 ### Fixed
 
+- **Nothing in browser storage, as SECURITY.md states**: loglevel persisted every logger's level
+  to `localStorage` (six `loglevel:*` entries on load). Levels are no longer persisted, entries left
+  by earlier builds are removed at startup, and `window.__setLogLevel` now also reaches the named
+  loggers (it read a registry property that does not exist, so only the root logger changed), with
+  the `[name]` prefix kept through level changes and added once per logger. The
+  test storage mock now treats property access as item access, like a real `Storage`, so writes of
+  the form `localStorage[key] = value` can no longer slip past the storage assertions.
 - **Caddy: the monitoring console's BFF routes never reached the BFF.** `deploy/Caddyfile` and
   `bff/Caddyfile.example` used a bare `reverse_proxy @bff` next to a catch-all `handle`; Caddy
   orders `handle` before `reverse_proxy`, so `/bff/*` and `/api/admin/*` got the SPA's
