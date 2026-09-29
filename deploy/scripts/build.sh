@@ -22,8 +22,8 @@
 #
 # Examples:
 #   ./build.sh                          # working trees (dev)
-#   ./build.sh v1.4.0                   # monitoring at v1.4.0, backend working tree
-#   SOCRATE_REF=v1.3.0 ./build.sh v1.4.0
+#   ./build.sh v1.0.0                   # monitoring at v1.0.0, backend working tree
+#   SOCRATE_REF=v1.4.0 ./build.sh v1.0.0
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -95,7 +95,11 @@ echo "▶ building monitoring BFF…"
 #    logs, /metrics (socrate_build_info) and the consoles' footer.
 if [ -d "$go_oauth2_dir" ]; then
   socrate_src="$(checkout_ref "$go_oauth2_dir" "$socrate_ref")"
-  mod="github.com/ovandermoten/go-oauth2"
+  # The -X package path must be the module path of the tree being built: it changed
+  # from github.com/ovandermoten/go-oauth2 to github.com/ovander/go-oauth2 in v1.4.0,
+  # so read it from that tree's go.mod rather than hard-coding either.
+  mod="$(awk '/^module /{print $2; exit}' "$socrate_src/go.mod")"
+  [ -n "$mod" ] || { echo "✖ cannot read the module path from $socrate_src/go.mod" >&2; exit 1; }
   ver="$(describe "$go_oauth2_dir" "$socrate_ref")"
   commit="$(git -C "$socrate_src" rev-parse --short HEAD 2>/dev/null || echo none)"
   branch="$(git -C "$socrate_src" rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached)"
@@ -111,6 +115,12 @@ if [ -d "$go_oauth2_dir" ]; then
   echo "▶ building Socrate seed (first-superadmin)…"
   ( cd "$socrate_src" && CGO_ENABLED=0 GOOS="$target_os" GOARCH="$target_arch" \
       go build -trimpath -ldflags="$vflags" -o "$out/bin/socrate-seed" ./cmd/seed )
+  # -X silently ignores a symbol path that does not exist, which would ship a server
+  # reporting version=dev. The build time is unique to this run, so its presence in
+  # the binary proves the stamp landed.
+  if ! grep -aqF -- "$build_time" "$out/bin/socrate"; then
+    echo "✖ version stamp missing from the Socrate binary (-X path ${mod}/internal/version)" >&2; exit 1
+  fi
   printf '%s\n' "$ver" > "$out/SOCRATE_VERSION"
 else
   echo "⚠ go-oauth2 not found at $go_oauth2_dir — skipping Socrate binaries (set GO_OAUTH2_DIR)"
