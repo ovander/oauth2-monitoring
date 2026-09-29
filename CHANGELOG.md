@@ -6,6 +6,10 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+### Changed
+
+- Build and CI toolchain: Node.js 20 (end of life since 2026-04-30) → Node.js 24 LTS; `.nvmrc` and `engines` pin it.
+
 ## [1.0.0] - 2026-09-29
 
 First tagged release of the Socrate monitoring console: a Vue 3 security operations dashboard with

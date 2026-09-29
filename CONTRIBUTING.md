@@ -9,9 +9,10 @@ Contributions are accepted under the project's licence, [Apache-2.0](LICENSE).
 
 ## Development setup
 
-Requirements: Node.js 20, and Go for the BFF (the `toolchain` line in `bff/go.mod` downloads the
-exact version, 1.27.1). Signing in needs a running Socrate server with a confidential OAuth client
-registered for the console (redirect URI `http://localhost:5180/bff/callback` for local work).
+Requirements: Node.js 24 (the version in `.nvmrc`, which CI uses), and Go for the BFF (the
+`toolchain` line in `bff/go.mod` downloads the exact version, 1.27.1). Signing in needs a running
+Socrate server with a confidential OAuth client registered for the console (redirect URI
+`http://localhost:5180/bff/callback` for local work).
 
 ```bash
 git clone https://github.com/ovander/oauth2-monitoring && cd oauth2-monitoring

@@ -31,7 +31,7 @@ export const useVersionStore = defineStore('version', {
     clientBuildDate: (): string => __APP_BUILD_DATE__,
     clientBuildNode: (): string => __APP_BUILD_NODE__,
     clientBuildVite: (): string => __APP_BUILD_VITE__,
-    /** Toolchain that built the console, e.g. "Node v20.18.0 · Vite 7.1.3". */
+    /** Toolchain that built the console, e.g. "Node v24.21.0 · Vite 7.1.3". */
     clientToolchain: (): string => `Node ${__APP_BUILD_NODE__} · Vite ${__APP_BUILD_VITE__}`,
   },
 
