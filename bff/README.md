@@ -19,14 +19,16 @@ A request without a valid session gets `401`; an unsafe method without the sessi
 ```
 Browser ──HTTPS──► Caddy (monitor.example.com)
                      ├── /                        → file_server (built SPA, dist/)
-                     └── /bff/*, /api/admin/*     → 127.0.0.1:8090 (this BFF)
+                     └── /bff/*, /api/admin/*,    → 127.0.0.1:8090 (this BFF)
+                         /api/version
                                                         ├──► 127.0.0.1:8081  Socrate admin API
                                                         └──► 127.0.0.1:8080  Socrate OAuth server
 ```
 
 - `socrate.example.com` is the public Socrate OAuth server: the browser is redirected there to
   sign in (`BFF_OAUTH_PUBLIC_URL`). The BFF reaches the same server over loopback
-  (`BFF_OAUTH_UPSTREAM`) for the code exchange, refresh and revocation.
+  (`BFF_OAUTH_UPSTREAM`) for the code exchange, refresh and revocation, and forwards the public
+  `GET /api/version` probe to it.
 - The admin API (`:8081`) has no public host name; only the console BFFs reach it, over loopback.
 - The BFF binds `127.0.0.1` by default, so it is reachable only through Caddy.
 
@@ -119,6 +121,7 @@ golangci-lint run ./...
 | `POST /bff/logout` | Revokes the tokens at the issuer, deletes the session and clears the cookie (CSRF-protected). A failed server-side delete answers `500 logout_incomplete` rather than reporting success. |
 | `POST /bff/elevate` | Step-up: re-authenticates at Socrate with the session's token and keeps the fresh token in the session (CSRF-protected; nothing reaches the browser). Per-IP budget. |
 | `ANY /api/admin/**` | Allowlisted reverse proxy that injects the session's access token; SSE-aware. Unsafe methods need a valid `X-CSRF-Token`. |
+| `GET /api/version` | Socrate's public server-version probe, for the version badge and stale-tab detection. Exact path; `GET` and `HEAD` only, other methods `405`. No session needed; forwarded to the issuer (`BFF_OAUTH_UPSTREAM`, the upstream the admin console's BFF uses for it) with the browser's cookie and `Authorization` header dropped, never with the session's token. |
 | anything else | `404`: the BFF is an allowlist, never an open proxy. |
 
 The SPA is cookie-only: it sends `credentials: 'include'`, never an `Authorization` header,
@@ -128,9 +131,9 @@ bootstraps from `/bff/session` and signs in through `/bff/login`.
 
 - **Dependencies**: the `backendkit/bff` gateway and `pgx` (for the optional Postgres store),
   nothing else.
-- **Allowlist, not an open proxy**: only `/bff/*` and `/api/admin/*` are served. Requests whose
-  path is not already canonical (`..`, `.`, `//`, or percent-encoded dot-segments such as
-  `%2e%2e`) are refused outright, so the allowlist decision and the upstream's routing decision
+- **Allowlist, not an open proxy**: only `/bff/*`, `/api/admin/*` and `GET /api/version` are
+  served. Requests whose path is not already canonical (`..`, `.`, `//`, or percent-encoded
+  dot-segments such as `%2e%2e`) are refused outright, so the allowlist decision and the upstream's routing decision
   are always made on the same string.
 - **Client IP for the per-IP budgets**: `X-Forwarded-For` is honoured only when the TCP peer is
   loopback (Caddy on the same host, which replaces any client-supplied value); from any other peer

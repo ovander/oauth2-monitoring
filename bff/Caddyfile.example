@@ -25,7 +25,9 @@ monitoring.vandermoten.eu {
 	}
 
 	# Auth + admin API → internal BFF. The BFF is the ONLY client of the admin API.
-	@bff path /bff/* /api/admin/*
+	# /api/version (exact path) is the public server-version probe; the BFF
+	# forwards it to the Socrate issuer without credentials.
+	@bff path /bff/* /api/admin/* /api/version
 	# handle, not a bare reverse_proxy: Caddy orders handle before reverse_proxy, so a
 	# bare proxy next to the catch-all handle below never runs and /bff/* gets the SPA.
 	handle @bff {

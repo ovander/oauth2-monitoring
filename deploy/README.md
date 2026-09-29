@@ -25,6 +25,7 @@ first deploy:
         ▼                       ▼                        ▼
   127.0.0.1:8080         admin SPA + admin BFF    /srv/monitoring/dist (SPA)
   Socrate OAuth          (oauth2-admin kit,       + @bff /bff/* /api/admin/*
+                                                         /api/version
   (public OIDC)          /etc/caddy/sites/)              │
         │                       │                        ▼
         │                       │                 127.0.0.1:8090  monitoring BFF

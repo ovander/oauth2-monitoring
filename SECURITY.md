@@ -38,8 +38,8 @@ deployment requirements the host must provide. The design is recorded in
 
 ## Architecture in one paragraph
 
-Caddy is the only public listener. It serves the built SPA and reverse-proxies `/bff/*` and
-`/api/admin/*` to the BFF on `127.0.0.1:8090`. The BFF is the confidential OAuth client: it runs
+Caddy is the only public listener. It serves the built SPA and reverse-proxies `/bff/*`,
+`/api/admin/*` and `/api/version` to the BFF on `127.0.0.1:8090`. The BFF is the confidential OAuth client: it runs
 Authorization Code + PKCE server-side, keeps the tokens in a server-side session, and gives the
 browser only an opaque `__Host-` cookie. Every console call, including the Server-Sent Events
 stream, is a same-origin cookie request; the BFF injects the bearer and is the only client of the
@@ -51,8 +51,10 @@ cannot exfiltrate a replayable credential.
 - **Sessions are mandatory.** The BFF refuses to start without `BFF_CLIENT_ID`. The only
   override, `BFF_PHASE1_PASSTHROUGH=true`, exists for a migration from browser-held tokens; it and
   `BFF_ALLOW_PASSTHROUGH` are logged as startup warnings and must not be used in production.
-- **Allowlist, never an open proxy.** Only `/bff/*` and `/api/admin/*` are served; anything else
-  is 404. Paths that are not already canonical (`..`, `.`, `//`, or percent-encoded dot-segments
+- **Allowlist, never an open proxy.** Only `/bff/*`, `/api/admin/*` and `GET /api/version` are
+  served; anything else is 404. `/api/version` is Socrate's public version probe: exact path,
+  `GET`/`HEAD` only, forwarded to the issuer with the browser's cookie and `Authorization` header
+  dropped and never with the session's token. Paths that are not already canonical (`..`, `.`, `//`, or percent-encoded dot-segments
   such as `%2e%2e`) are refused before routing, so the allowlist and the upstream decide on the
   same string.
 - **Fail-closed proxy.** No valid session ⇒ 401. Mutating methods need the session's

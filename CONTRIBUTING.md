@@ -42,8 +42,9 @@ This console is a Tier-0 surface, so a few rules are absolute. They are explaine
   `new Function`, `document.write` or `javascript:` URLs.
 - **The Content Security Policy** is set in `deploy/Caddyfile` and mirrored in `index.html`;
   change both together.
-- **The BFF is an allowlist, never an open proxy.** It serves `/bff/*` and `/api/admin/*` only;
-  unsafe methods keep requiring `X-CSRF-Token` and non-canonical paths stay refused.
+- **The BFF is an allowlist, never an open proxy.** It serves `/bff/*`, `/api/admin/*` and the
+  public `GET /api/version` probe only; unsafe methods keep requiring `X-CSRF-Token` and
+  non-canonical paths stay refused.
 - **Fail closed.** No valid session means `401`. Do not turn a fail-closed default into a
   fail-open one to make something work, and do not enable the migration-only pass-through
   settings (`BFF_PHASE1_PASSTHROUGH`, `BFF_ALLOW_PASSTHROUGH`).

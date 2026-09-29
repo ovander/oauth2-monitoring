@@ -41,12 +41,14 @@ monitoring.vandermoten.eu {
 	import security_headers
 	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
 
-	# Auth + admin API → the BFF (the only client of the admin API for this app).
+	# Auth + admin API → the BFF (the only client of the admin API for this app),
+	# plus the public server-version probe /api/version (exact path), which the
+	# BFF allowlists and forwards to the Socrate issuer without credentials.
 	# Trust model (P3-17): the BFF honours X-Forwarded-For only from a loopback
 	# peer and relies on Caddy's default trusted_proxies (none) to REPLACE any
 	# client-supplied X-Forwarded-For with the real peer address. Do not add
 	# `trusted_proxies` unless a further proxy sits in front of Caddy.
-	@bff path /bff/* /api/admin/*
+	@bff path /bff/* /api/admin/* /api/version
 	# handle, not a bare reverse_proxy: Caddy orders handle before reverse_proxy, so a
 	# bare proxy next to the catch-all handle below never runs and /bff/* gets the SPA.
 	handle @bff {

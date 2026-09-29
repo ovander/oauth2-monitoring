@@ -61,6 +61,9 @@ loopback-only admin API. The design is recorded in
   in browser storage, and the charts follow the theme.
 - **No tokens in the browser**: the SPA calls the API same-origin with a session cookie and
   never sends an `Authorization` header.
+- **Version badge and stale-tab detection**: the sidebar shows the console and Socrate server
+  versions, and the console polls the server version every five minutes and offers a refresh when
+  a new release has been deployed (`useVersionCheck.ts`).
 
 ---
 
@@ -100,12 +103,13 @@ Browser (SPA, __Host- session cookie only)
    ▼
 Caddy (monitor.example.com)          the only public listener
    ├── /                         →  file_server: built SPA (/srv/monitoring/dist)
-   └── /bff/*, /api/admin/*      →  BFF on 127.0.0.1:8090 (flush_interval -1 for SSE)
-                                       │  session → bearer, X-CSRF-Token on unsafe methods
+   └── /bff/*, /api/admin/*,     →  BFF on 127.0.0.1:8090 (flush_interval -1 for SSE)
+       /api/version                    │  session → bearer, X-CSRF-Token on unsafe methods
                                        ├──► 127.0.0.1:8081  Socrate admin API (loopback only)
                                        │      REST calls and /api/admin/events/stream (SSE)
                                        └──► 127.0.0.1:8080  Socrate OAuth server
-                                              code exchange, refresh, revocation
+                                              code exchange, refresh, revocation, and
+                                              GET /api/version (public, no credentials)
 
 Browser ──redirect──► socrate.example.com/oauth/authorize (sign-in at Socrate)
 ```
@@ -116,7 +120,9 @@ Browser ──redirect──► socrate.example.com/oauth/authorize (sign-in at 
   server-side session (in memory, or in Postgres with `BFF_SESSION_DSN`) and injects the bearer
   on every proxied call, including the Server-Sent Events stream.
 - A request without a valid session gets `401`; an unsafe method without the session's
-  `X-CSRF-Token` gets `403`. Anything outside `/bff/*` and `/api/admin/*` is `404`.
+  `X-CSRF-Token` gets `403`. `GET /api/version` is the one public route: no session, and no
+  cookie or bearer forwarded. Anything outside `/bff/*`, `/api/admin/*` and `GET /api/version`
+  is `404`.
 
 Details: [`bff/README.md`](bff/README.md) and [`deploy/README.md`](deploy/README.md).
 
@@ -309,7 +315,7 @@ The BFF also ships a distroless image: `docker build -t socrate-monitoring-bff b
 | No OAuth token or client secret in the browser — the BFF holds them server-side | `bff/`, tested in `useApi.test.ts` / `useSSE.test.ts` |
 | `__Host-` session cookie: `HttpOnly`, `Secure`, `SameSite=Strict` | BFF (`backendkit/bff`) |
 | No valid session ⇒ 401; mutating calls need `X-CSRF-Token` ⇒ else 403 | BFF gateway |
-| Allowlist proxy (`/bff/*`, `/api/admin/*`); non-canonical paths refused | `bff/server.go` |
+| Allowlist proxy (`/bff/*`, `/api/admin/*`, `GET /api/version`); non-canonical paths refused | `bff/server.go` |
 | Login bound to the browser that started it (login CSRF / session swap) | `bff/auth.go` |
 | Step-up for destructive actions, elevated token kept server-side | `/bff/elevate` |
 | Per-IP budgets on login and step-up; `X-Forwarded-For` trusted only from loopback | `bff/ratelimit.go` |

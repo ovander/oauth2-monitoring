@@ -22,7 +22,8 @@ type Config struct {
 	// ── Phase 2: server-side OAuth (set ClientID to enable) ───────────────────
 
 	// OAuthUpstream is the internal base URL of the Socrate OAuth server, used for
-	// the back-channel token exchange/refresh (loopback, no public round-trip).
+	// the back-channel token exchange/refresh (loopback, no public round-trip)
+	// and, in both phases, for the public GET /api/version probe.
 	OAuthUpstream string
 	oauthURL      *url.URL
 
@@ -123,6 +124,14 @@ func LoadConfig() (*Config, error) {
 	}
 	c.adminURL = u
 
+	// Parsed in both phases: besides the Phase 2 token calls, the issuer also
+	// serves the public GET /api/version probe the BFF allowlists.
+	ou, err := url.Parse(c.OAuthUpstream)
+	if err != nil || ou.Scheme == "" || ou.Host == "" {
+		return nil, fmt.Errorf("invalid BFF_OAUTH_UPSTREAM %q", c.OAuthUpstream)
+	}
+	c.oauthURL = ou
+
 	if !c.AuthEnabled() {
 		// P3-26 / pass-3 N-5: never run as an open pass-through by accident.
 		if !c.Phase1Passthrough {
@@ -133,11 +142,6 @@ func LoadConfig() (*Config, error) {
 		return c, nil
 	}
 
-	ou, err := url.Parse(c.OAuthUpstream)
-	if err != nil || ou.Scheme == "" || ou.Host == "" {
-		return nil, fmt.Errorf("invalid BFF_OAUTH_UPSTREAM %q", c.OAuthUpstream)
-	}
-	c.oauthURL = ou
 	if c.OAuthPublicURL == "" || c.PublicOrigin == "" {
 		return nil, fmt.Errorf("BFF_OAUTH_PUBLIC_URL and BFF_PUBLIC_ORIGIN are required when BFF_CLIENT_ID is set")
 	}
