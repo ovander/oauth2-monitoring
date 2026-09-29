@@ -98,6 +98,8 @@ func (o *oauthClient) token(ctx context.Context, form url.Values) (*tokenRespons
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	// Attribute the call to the browser it is made for (see attribution.go).
+	socrate.ApplyClientAttribution(req)
 
 	resp, err := o.http.Do(req)
 	if err != nil {
@@ -147,6 +149,8 @@ func (o *oauthClient) revoke(ctx context.Context, token, hint string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	// Attribute the call to the browser it is made for (see attribution.go).
+	socrate.ApplyClientAttribution(req)
 
 	resp, err := o.http.Do(req)
 	if err != nil {

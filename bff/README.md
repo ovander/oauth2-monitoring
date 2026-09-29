@@ -138,6 +138,14 @@ bootstraps from `/bff/session` and signs in through `/bff/login`.
 - **Client IP for the per-IP budgets**: `X-Forwarded-For` is honoured only when the TCP peer is
   loopback (Caddy on the same host, which replaces any client-supplied value); from any other peer
   it is ignored.
+- **Client attribution** (`attribution.go`): the outermost middleware records that client IP and
+  the browser's `User-Agent` in the request context. The code exchange, the refresh, the logout
+  revocations and the step-up password check are sent to Socrate with `X-Forwarded-For` set to
+  exactly that address and the browser's `User-Agent` (sanitised, at most 512 bytes), so Socrate
+  audits and rate-limits the operator's browser rather than the BFF. Proxied requests
+  (`/api/admin/*`, including the event stream, and `/api/version`) drop the inbound
+  `X-Forwarded-For` and send `<client IP>, <BFF peer>`: Socrate trusts the left-most entry from
+  loopback, so the BFF replaces the header and never appends to a browser-supplied value.
 - **Step-up errors**: `/bff/elevate` forwards the admin API's `4xx` challenge so the step-up
   dialog can prompt again, never an upstream `5xx` body, and treats a `200` without a usable
   `access_token` and `expires_in` as a failure.
