@@ -8,6 +8,11 @@ All notable changes to the Socrate monitoring console are documented here. The f
 
 ### Added
 
+- **Tag-pinned deploys**: `build.sh`/`push.sh` take `REF` (this repo, or the first argument) and
+  `SOCRATE_REF` (go-oauth2) and build each from a throwaway `git worktree` of that ref, so a release
+  is exactly the committed source. The Socrate binaries are version-stamped (`-X
+  …/internal/version.*`), with the module path read from the built tree's `go.mod` (it changed in
+  go-oauth2 v1.4.0), and the build fails if the stamp is missing instead of shipping `version=dev`.
 - **Apache-2.0 licence** (`LICENSE`, and `license` in `package.json`) and the contributor kit:
   `SECURITY.md` (private vulnerability reporting, scope, supported versions and the security
   posture), `CONTRIBUTING.md`, `CLAUDE.md`, `CODEOWNERS`, issue forms, a pull-request template and

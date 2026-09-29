@@ -14,7 +14,7 @@
 #                working tree.
 #
 # Deploy a tagged release (build the exact committed trees, stamp the version):
-#   VPS_HOST=deploy@vps SOCRATE_REF=v1.3.0 ./deploy/scripts/push.sh v1.4.0
+#   VPS_HOST=deploy@vps SOCRATE_REF=v1.4.0 ./deploy/scripts/push.sh v1.0.0
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
