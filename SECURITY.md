@@ -80,6 +80,8 @@ cannot exfiltrate a replayable credential.
 - **No tokens in the browser.** API and SSE calls use `credentials: 'include'` and never set an
   `Authorization` header; nothing is kept in `localStorage` or `sessionStorage`. Unit tests assert
   both (`useApi.test.ts`, `useSSE.test.ts`).
+  The only cookie the SPA writes itself is `theme` (`light`/`dark`, `SameSite=Strict`, `Secure`
+  over HTTPS): a display preference, never sent anywhere that acts on it (`themeStore.test.ts`).
 - **CSRF.** Mutating requests carry `X-CSRF-Token` from the `/bff/session` bootstrap; safe
   requests do not (tested).
 - **No XSS sinks** in the source: no `v-html`, `innerHTML` or `eval`.

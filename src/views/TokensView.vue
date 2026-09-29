@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useMonitorStore } from '@/stores/monitorStore'
+import { useChartTheme } from '@/composables/useChartTheme'
 import { useApi } from '@/composables/useApi'
 import { useToast } from 'primevue/usetoast'
 import { format } from 'date-fns'
@@ -72,20 +73,21 @@ const tokenTypesChart = computed(() => ({
   }]
 }))
 
-const tokenTypesOptions = {
+const chart = useChartTheme()
+const tokenTypesOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
     legend: {
       position: 'bottom' as const,
       labels: {
-        color: '#94a3b8',
+        color: chart.value.legend,
         usePointStyle: true,
         padding: 20
       }
     }
   }
-}
+}))
 
 // Chart: Token Activity Over Time
 const tokenActivityChart = computed(() => ({
@@ -118,14 +120,14 @@ const tokenActivityChart = computed(() => ({
   ]
 }))
 
-const tokenActivityOptions = {
+const tokenActivityOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
     legend: {
       position: 'bottom' as const,
       labels: {
-        color: '#94a3b8',
+        color: chart.value.legend,
         usePointStyle: true,
         padding: 20
       }
@@ -133,15 +135,15 @@ const tokenActivityOptions = {
   },
   scales: {
     x: {
-      grid: { color: 'rgba(255,255,255,0.05)' },
-      ticks: { color: '#64748b' }
+      grid: { color: chart.value.grid },
+      ticks: { color: chart.value.tick }
     },
     y: {
-      grid: { color: 'rgba(255,255,255,0.05)' },
-      ticks: { color: '#64748b' }
+      grid: { color: chart.value.grid },
+      ticks: { color: chart.value.tick }
     }
   }
-}
+}))
 
 // Chart: By App
 const byAppChart = computed(() => ({
@@ -165,14 +167,14 @@ const byAppChart = computed(() => ({
   ]
 }))
 
-const byAppOptions = {
+const byAppOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
     legend: {
       position: 'bottom' as const,
       labels: {
-        color: '#94a3b8',
+        color: chart.value.legend,
         usePointStyle: true,
         padding: 20
       }
@@ -180,17 +182,17 @@ const byAppOptions = {
   },
   scales: {
     x: {
-      grid: { color: 'rgba(255,255,255,0.05)' },
-      ticks: { color: '#64748b' },
+      grid: { color: chart.value.grid },
+      ticks: { color: chart.value.tick },
       stacked: true
     },
     y: {
-      grid: { color: 'rgba(255,255,255,0.05)' },
-      ticks: { color: '#64748b' },
+      grid: { color: chart.value.grid },
+      ticks: { color: chart.value.tick },
       stacked: true
     }
   }
-}
+}))
 
 // Computed stats
 const totalIssued = computed(() => {

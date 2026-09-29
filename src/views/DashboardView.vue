@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMonitorStore } from '@/stores/monitorStore'
+import { useChartTheme } from '@/composables/useChartTheme'
 import { useApi } from '@/composables/useApi'
 import { useSSE } from '@/composables/useSSE'
 import { useLogger } from '@/utils/logger'
@@ -65,14 +66,15 @@ const chartData = computed(() => ({
   ]
 }))
 
-const chartOptions = {
+const chart = useChartTheme()
+const chartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
     legend: {
       position: 'bottom' as const,
       labels: {
-        color: '#94a3b8',
+        color: chart.value.legend,
         usePointStyle: true,
         padding: 20
       }
@@ -80,15 +82,15 @@ const chartOptions = {
   },
   scales: {
     x: {
-      grid: { color: 'rgba(255,255,255,0.05)' },
-      ticks: { color: '#64748b' }
+      grid: { color: chart.value.grid },
+      ticks: { color: chart.value.tick }
     },
     y: {
-      grid: { color: 'rgba(255,255,255,0.05)' },
-      ticks: { color: '#64748b' }
+      grid: { color: chart.value.grid },
+      ticks: { color: chart.value.tick }
     }
   }
-}
+}))
 
 // Health status color
 const healthStatusColor = computed(() => {
