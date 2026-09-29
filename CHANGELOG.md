@@ -1,8 +1,8 @@
 # Changelog
 
-All notable changes to the Socrate monitoring console are documented here. The format is based on
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+All notable changes to the Socrate monitoring console are documented here. Format:
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
+[Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
@@ -24,6 +24,17 @@ All notable changes to the Socrate monitoring console are documented here. The f
 
 ### Changed
 
+- **Documentation** brought to the suite's standard: the README gains a pitch, prerequisites,
+  architecture, the light/dark theme, screenshots and a regenerated project tree, and drops the
+  history of the removed root `Dockerfile`, `nginx.conf` and `.env.production`; `.env.example`
+  lists only what the SPA and the Vite dev server read (`VITE_ADMIN_ROLES`, `VITE_VIEWER_ROLES`,
+  `DEV_BFF_TARGET`) instead of the retired public-client settings; `bff/README.md` gives run
+  instructions that work (registered client, container networking), documents `BFF_LOGIN_RATE`
+  and `BFF_ELEVATE_RATE`, and describes the pass-through once, as migration-only;
+  `deploy/README.md` documents tag-pinned deploys (`REF`, `SOCRATE_REF`). Docs use
+  `example.com` host names, state controls instead of review IDs, and no longer link the private
+  server repository. The ADR gets a plain Status/Date header. `SECURITY.md`, `CONTRIBUTING.md`
+  (the dev setup no longer leaves you in `bff/`) and the issue and pull-request templates follow.
 - `BFF-DESIGN.md` is now [`docs/adr/0001-backend-for-frontend.md`](docs/adr/0001-backend-for-frontend.md),
   marked accepted and implemented.
 
@@ -53,3 +64,5 @@ All notable changes to the Socrate monitoring console are documented here. The f
   root-level office documents out.
 
 Changes before this changelog was introduced are in the git history.
+
+[Unreleased]: https://github.com/ovander/oauth2-monitoring/commits/main

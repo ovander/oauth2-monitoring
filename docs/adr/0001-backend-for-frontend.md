@@ -1,8 +1,9 @@
 # ADR-0001 — Backend-for-Frontend for the Socrate Monitoring Console
 
-**Status:** Accepted — implemented (server-side sessions, CSRF, step-up; see [`bff/README.md`](../../bff/README.md))
-**Sprint:** 3 · **Issue:** #7 · **Severity:** Critical (the audit's core blocker)
-**Supersedes:** the trust model of the internal Tier-0 audit of the monitoring SPA (§8, §12-A), in which the browser held the tokens
+**Status:** Accepted (implemented; see [`bff/README.md`](../../bff/README.md))
+**Date:** 2026-06-25
+**Context:** the monitoring SPA held OAuth tokens in the browser; this decision moves them to a
+server-side Backend-for-Frontend.
 
 ---
 
@@ -41,22 +42,22 @@ server-side, and proxies the SPA's read/write calls — attaching the access tok
 The BFF ships as a **small standalone Go binary**. The production environment
 already runs **Caddy** as the edge, so Caddy stays the TLS terminator, serves the
 SPA static files, and routes `/bff/*` + `/api/admin/*` to the BFF — the BFF is an
-**internal upstream**, not the edge. One origin (`monitoring.vandermoten.eu`),
+**internal upstream**, not the edge. One origin (`monitor.example.com`),
 one process to harden. *(This supersedes an earlier draft that had the BFF
 replace nginx as the edge.)*
 
 ### 2.2 Deployment topology (single VPS, Caddy edge)
 
 ```
-Browser ──HTTPS──► Caddy (monitoring.vandermoten.eu)
+Browser ──HTTPS──► Caddy (monitor.example.com)
    ▲  __Host- cookie   ├── /                → file_server (monitoring SPA dist/)
    └───────────────────┴── /bff/* /api/admin/* → BFF (127.0.0.1:8090)
                                                     │ holds tokens server-side
                                                     └──► 127.0.0.1:8081  Socrate admin API (internal)
 ```
 
-Subdomains: `socrate.vandermoten.eu` = OAuth server (`:8080`),
-`admin.vandermoten.eu` = the admin SPA (separate frontend), `monitoring…` = this
+Subdomains: `socrate.example.com` = OAuth server (`:8080`),
+`admin.example.com` = the admin SPA (separate frontend), `monitor.example.com` = this
 console. The admin API (`:8081`) gets **no public subdomain** — only the BFF
 reaches it, over localhost. See `bff/Caddyfile.example`.
 

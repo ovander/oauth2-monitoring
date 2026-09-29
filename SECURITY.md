@@ -1,9 +1,10 @@
-# Security policy — Socrate monitoring console
+# Security policy
 
-The monitoring console is a **Tier-0** surface of the Socrate OAuth2/OIDC platform: it shows the
-live security event stream and lets operators act on it (block IPs, manage alert rules). It is a
-Vue SPA plus a small Go **Backend-for-Frontend** (`bff/`), and it must not become a way into the
-Socrate admin API. Security reports are welcome and handled first.
+The Socrate monitoring console is a **Tier-0** surface of the Socrate suite: it shows the live
+security event stream of Socrate, the suite's OAuth 2.1 / OpenID Connect server
+(`ovander/go-oauth2`, not public yet), and lets operators act on it (block IPs, manage alert
+rules). It is a Vue SPA plus a small Go **Backend-for-Frontend** (`bff/`), and it must not become
+a way into the Socrate admin API. Security reports are welcome and handled first.
 
 ## Reporting a vulnerability
 
@@ -19,14 +20,15 @@ the report is credited in the release notes unless you prefer otherwise.
 
 - In scope: the monitoring SPA, its BFF (`bff/`) — sessions, cookies, CSRF, the proxy allowlist,
   step-up, the event stream — and the deployment files in `deploy/`.
-- Out of scope: the Socrate identity provider and its admin API (report those in
-  [`ovander/go-oauth2`](https://github.com/ovander/go-oauth2)), the shared `backendkit` library
+- Out of scope: the Socrate identity provider and its admin API (`ovander/go-oauth2`, not public
+  yet), the shared `backendkit` library
   ([`ovander/backendkit`](https://github.com/ovander/backendkit)), denial-of-service by volume,
   and findings that need a compromised operator device.
 
 ## Supported versions
 
-Only the latest release receives security fixes.
+Only the latest release receives security fixes. The repository has no tagged release yet, so
+fixes land on `main`.
 
 ---
 
@@ -46,9 +48,9 @@ cannot exfiltrate a replayable credential.
 
 ## BFF controls (`bff/`, enforced in code)
 
-- **Sessions are mandatory.** The BFF refuses to start without `BFF_CLIENT_ID` unless
-  `BFF_PHASE1_PASSTHROUGH=true` is set deliberately for a migration window; that mode and
-  `BFF_ALLOW_PASSTHROUGH` are logged as startup warnings.
+- **Sessions are mandatory.** The BFF refuses to start without `BFF_CLIENT_ID`. The only
+  override, `BFF_PHASE1_PASSTHROUGH=true`, exists for a migration from browser-held tokens; it and
+  `BFF_ALLOW_PASSTHROUGH` are logged as startup warnings and must not be used in production.
 - **Allowlist, never an open proxy.** Only `/bff/*` and `/api/admin/*` are served; anything else
   is 404. Paths that are not already canonical (`..`, `.`, `//`, or percent-encoded dot-segments
   such as `%2e%2e`) are refused before routing, so the allowlist and the upstream decide on the
@@ -91,16 +93,15 @@ cannot exfiltrate a replayable credential.
 ## Automated gates (CI)
 
 ```bash
-cd bff && go vet ./... && go test -race ./...   # BFF tests
-cd bff && golangci-lint run ./...                # v2.14.0
 ./scripts/npm-audit-gate.sh --omit=dev           # fails on a high/critical advisory, or no audit data
 npm run test:run                                 # SPA unit tests (Vitest)
 npm run build                                    # vue-tsc type check + production build
+(cd bff && go vet ./... && go test -race ./... && golangci-lint run ./...)   # BFF; lint v2.14.0
 ```
 
 ## Deployment requirements (host-provided)
 
-See [`deploy/`](deploy) for the Caddy site, systemd units and scripts.
+See [`deploy/`](deploy/README.md) for the Caddy site, systemd units and scripts.
 
 - Caddy is the only public listener; the BFF binds `127.0.0.1:8090` and the admin API stays on
   loopback. Do not set Caddy `trusted_proxies` unless a further proxy sits in front of it.
