@@ -25,6 +25,10 @@ All notable changes to the Socrate monitoring console are documented here. The f
 
 ### Fixed
 
+- **Caddy: the monitoring console's BFF routes never reached the BFF.** `deploy/Caddyfile` and
+  `bff/Caddyfile.example` used a bare `reverse_proxy @bff` next to a catch-all `handle`; Caddy
+  orders `handle` before `reverse_proxy`, so `/bff/*` and `/api/admin/*` got the SPA's
+  `index.html` and sign-in could not work. The proxy is now inside `handle @bff`.
 - README and `bff/README.md` described the retired browser-held-token design (in-SPA PKCE, callback
   and setup views, tokens in memory, nginx headers, a session-less pass-through fallback). They now
   match the code: cookie-only SPA, server-side sessions, CSRF, step-up, and a BFF that refuses to

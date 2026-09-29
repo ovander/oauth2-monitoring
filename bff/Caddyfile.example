@@ -26,9 +26,13 @@ monitoring.vandermoten.eu {
 
 	# Auth + admin API → internal BFF. The BFF is the ONLY client of the admin API.
 	@bff path /bff/* /api/admin/*
-	reverse_proxy @bff 127.0.0.1:8090 {
-		flush_interval -1          # stream SSE (/api/admin/events/stream) immediately
-		header_up X-Forwarded-Proto {scheme}
+	# handle, not a bare reverse_proxy: Caddy orders handle before reverse_proxy, so a
+	# bare proxy next to the catch-all handle below never runs and /bff/* gets the SPA.
+	handle @bff {
+		reverse_proxy 127.0.0.1:8090 {
+			flush_interval -1          # stream SSE (/api/admin/events/stream) immediately
+			header_up X-Forwarded-Proto {scheme}
+		}
 	}
 
 	# Built monitoring SPA assets.
