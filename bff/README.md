@@ -5,17 +5,17 @@ to take OAuth tokens out of the browser: the monitoring SPA holds only an
 `HttpOnly` session cookie, while this service holds the tokens server-side and is
 the sole client of the Socrate admin API.
 
-Rationale and the full design are in [`../BFF-DESIGN.md`](../BFF-DESIGN.md)
+Rationale and the full design are in [`docs/adr/0001-backend-for-frontend.md`](../docs/adr/0001-backend-for-frontend.md)
 (ADR-0001). This service implements that ADR in phases.
 
-> **Status: Phase 2 (server-side sessions).** When `BFF_CLIENT_ID` is set, the
-> BFF runs the OAuth Authorization-Code + PKCE flow server-side, keeps the tokens
-> in a server-side session, hands the browser only an `HttpOnly` cookie, and
-> **injects** the access token into proxied admin-API calls. With no session it
-> falls back to Phase-1 pass-through, so the server can deploy before the SPA
-> switches to cookie auth. Phases 3–4 add CSRF enforcement, a scope-limited
-> client, and DPoP. The session store is in-memory (single-instance); a
-> Postgres-backed store is the next step for durability/HA.
+> **Status: server-side sessions, CSRF and step-up are live.** The BFF runs the
+> OAuth Authorization-Code + PKCE flow server-side, keeps the tokens in a
+> server-side session, hands the browser only an `HttpOnly` cookie, and
+> **injects** the access token into proxied admin-API calls. A request without a
+> valid session gets `401`; mutating calls need the session's `X-CSRF-Token`. The
+> BFF refuses to start without `BFF_CLIENT_ID` unless the Phase-1 pass-through is
+> enabled deliberately (`BFF_PHASE1_PASSTHROUGH=true`, migration window only).
+> Sessions are in memory by default, or in Postgres with `BFF_SESSION_DSN`.
 
 ## Topology (single VPS, Caddy edge)
 
@@ -88,14 +88,15 @@ Wire it into Caddy with [`Caddyfile.example`](./Caddyfile.example).
   injection — **the milestone that removes tokens from the browser**. ✅
 - **Phase 2b (here):** Postgres-backed session store — set `BFF_SESSION_DSN` for
   durable, multi-instance sessions that survive restarts. ✅
-- **Phase 3:** CSRF double-submit enforcement, `/bff/elevate` step-up passthrough,
-  scope-limited (`monitoring:read`/`write`) confidential client (#201).
+- **Phase 3:** CSRF double-submit enforcement ✅, `/bff/elevate` step-up ✅,
+  per-IP budgets on `/bff/login` and `/bff/elevate` ✅. Scope-limited client: the
+  Socrate server accepts the least-privilege `monitoring:read`/`monitoring:write`
+  scopes (#201); set `BFF_SCOPES` to request them.
 - **Phase 4:** DPoP (RFC 9449) on the BFF → Socrate leg (#202).
 
-> **SPA companion:** the monitoring SPA still uses bearer-token auth today; the
-> dual-mode proxy keeps it working. Switching the SPA to cookie-only
-> (`credentials: 'include'`, drop `authStore` tokens, `/bff/session` bootstrap,
-> login → `/bff/login`) is the coordinated follow-up PR that completes Phase 2.
+The SPA is cookie-only: it sends `credentials: 'include'`, never an
+`Authorization` header, bootstraps from `/bff/session` and signs in through
+`/bff/login`.
 
 ## Security notes
 
