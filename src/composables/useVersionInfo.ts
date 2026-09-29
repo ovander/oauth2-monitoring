@@ -13,8 +13,8 @@ export function useVersionInfo() {
     clientVersion:   __APP_VERSION__,
     clientBuildDate: __APP_BUILD_DATE__,
     backendVersion:  computed(() => store.backend?.version    ?? '…'),
-    backendCommit:   computed(() => store.backend?.git_commit ?? '…'),
-    backendDate:     computed(() => store.backend?.build_date ?? '…'),
+    backendCommit:   computed(() => store.backend?.commit     ?? '…'),
+    backendDate:     computed(() => store.backend?.build_time ?? '…'),
     fetchError:      computed(() => store.fetchError),
   }
 }

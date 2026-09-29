@@ -40,6 +40,11 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ### Fixed
 
+- **Version badge now shows the server commit**: the version store read `git_commit` and
+  `build_date` from Socrate's `GET /api/version`, which returns `version`, `commit`, `branch` and
+  `build_time`, so the badge never showed the backend commit. The store and `useVersionInfo` now
+  read the server's field names; a unit test parses a realistic body. Stale-tab detection (keyed on
+  `version`) is unchanged.
 - **Nothing in browser storage, as SECURITY.md states**: loglevel persisted every logger's level
   to `localStorage` (six `loglevel:*` entries on load). Levels are no longer persisted, entries left
   by earlier builds are removed at startup, and `window.__setLogLevel` now also reaches the named

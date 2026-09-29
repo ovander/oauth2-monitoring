@@ -3,10 +3,15 @@ import { useLogger } from '@/utils/logger'
 
 const log = useLogger('version')
 
+/**
+ * Body of Socrate's GET /api/version (go-oauth2 HealthHandler.Version).
+ * Field names are the server's JSON keys; build_time is RFC 3339 UTC.
+ */
 export interface BackendVersion {
   version:    string
-  build_date: string
-  git_commit: string
+  commit:     string
+  branch:     string
+  build_time: string
 }
 
 export const useVersionStore = defineStore('version', {
@@ -29,7 +34,7 @@ export const useVersionStore = defineStore('version', {
         const res = await fetch('/api/version')
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         this.backend = await res.json() as BackendVersion
-        log.debug('backend version:', this.backend.version, '@', this.backend.git_commit)
+        log.debug('backend version:', this.backend.version, '@', this.backend.commit)
       } catch (err: unknown) {
         this.fetchError = true
         log.warn('could not fetch backend version:', err instanceof Error ? err.message : err)
