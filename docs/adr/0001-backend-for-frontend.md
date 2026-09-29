@@ -1,8 +1,8 @@
 # ADR-0001 — Backend-for-Frontend for the Socrate Monitoring Console
 
-**Status:** Proposed (review before implementation)
+**Status:** Accepted — implemented (server-side sessions, CSRF, step-up; see [`bff/README.md`](../../bff/README.md))
 **Sprint:** 3 · **Issue:** #7 · **Severity:** Critical (the audit's core blocker)
-**Supersedes the trust model in:** `MONITORING-SPA-TIER0-AUDIT.md` §8, §12-A
+**Supersedes:** the trust model of the internal Tier-0 audit of the monitoring SPA (§8, §12-A), in which the browser held the tokens
 
 ---
 

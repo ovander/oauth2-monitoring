@@ -198,3 +198,19 @@ test/
 
 # Local deploy build artifacts
 deploy/_artifacts/
+
+# ---- Environment files ----
+# All env files stay out of git except the example (.env.production once slipped in).
+.env.*
+!.env.example
+
+# ---- Editors ----
+.idea/
+
+# ---- Internal documents ----
+# Reports, audits and runbooks in office formats are kept outside this public
+# repository; project documentation is Markdown under docs/.
+/*.docx
+/*.pdf
+/*.xlsx
+/*.pptx

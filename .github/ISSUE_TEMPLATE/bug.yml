@@ -1,0 +1,57 @@
+name: Bug report
+description: Something in the monitoring console does not work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. For a security vulnerability, do **not** open an issue: use the
+        Security tab → Report a vulnerability.
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: The console version or commit you run, and the Socrate server version (`GET /api/version`).
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Sign-in, session or step-up (BFF)
+        - Dashboard or live event stream
+        - Threats, sessions, tokens or geo
+        - Reports or policy decisions
+        - Alerts or blocked IPs
+        - Audit logs or settings
+        - Deployment (Caddy, systemd, scripts)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Sign in → Events → …
+        2. …
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and device
+      placeholder: Chrome 153 on macOS, Firefox on Linux…
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots, console errors, BFF logs
+      description: Remove tokens, cookies, e-mail addresses and other personal data before pasting.

@@ -1,6 +1,21 @@
-# OAuth2 Security Monitor
+# Socrate Monitor — OAuth2 Security Monitoring Console
 
-A real-time security operations dashboard for OAuth2 / OpenID Connect servers. Built with Vue 3, Pinia, PrimeVue 4, and TypeScript.
+A real-time security operations dashboard for the [Socrate](https://github.com/ovander/go-oauth2) OAuth2 / OpenID Connect server. Built with Vue 3, Pinia, PrimeVue 4, and TypeScript, behind a Go Backend-for-Frontend.
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Quick Start (Development)](#quick-start-development)
+- [Environment Variables](#environment-variables)
+- [Production Build](#production-build)
+- [Testing](#testing)
+- [Security Posture](#security-posture)
+- [Project Structure](#project-structure)
+- [Contributing](#contributing)
+- [Security](#security)
+- [License](#license)
 
 ---
 
@@ -15,7 +30,7 @@ A real-time security operations dashboard for OAuth2 / OpenID Connect servers. B
 > **Architecture:** The SPA is served behind Caddy, which routes `/bff/*` and
 > `/api/admin/*` to the Go **Backend-for-Frontend** in [`bff/`](./bff). The BFF
 > runs the OAuth 2.1 Authorization-Code + PKCE flow server-side and holds the
-> tokens; the browser never sees them. See [`BFF-DESIGN.md`](./BFF-DESIGN.md) and
+> tokens; the browser never sees them. See [ADR-0001](docs/adr/0001-backend-for-frontend.md) and
 > [`deploy/`](./deploy).
 
 ---
@@ -91,51 +106,84 @@ npm run test:coverage # coverage report (HTML in coverage/)
 
 The test suite covers:
 
-- **authStore** — PKCE flow, token lifecycle, RBAC, localStorage isolation
+- **authStore** — session bootstrap from `/bff/session`, network failures, viewer/admin role gating, step-up
 - **monitorStore** — all state mutations and computed properties
-- **useApi** — auth headers, 401 retry guard, store integration
-- **useSSE** — connection lifecycle, event parsing, reconnect
-- **CallbackView** — state/CSRF validation, error handling
-- **Integration** — end-to-end auth flow, secret isolation
+- **useApi** — cookie credentials with **no** `Authorization` header, `X-CSRF-Token` on mutating calls only, 401 handling
+- **useSSE** — same-origin cookie connection, event parsing, reconnect
+- **usePolicyDecisions** and **policy** utils — decision-log filters, paging and labels
+- **Integration** — the cookie-session flow end to end: bootstrap, role gating, logout
+
+The BFF has its own Go test suite: `cd bff && go test -race ./...`.
 
 ---
 
 ## Security Posture
 
-| Control | Status |
-|---------|--------|
-| CSRF state validation on OAuth callback | ✅ |
-| Public PKCE client — no client secret in the browser | ✅ |
-| Tokens in-memory only (not `sessionStorage`) | ✅ |
-| Role-based access control via JWT claims | ✅ |
-| Token refresh loop protection (`retried` flag) | ✅ |
-| Content Security Policy (meta + nginx header) | ✅ |
-| HTTPS enforcement warning for non-localhost | ✅ |
-| Security headers via nginx (HSTS, X-Frame, etc.) | ✅ |
-| `npm audit` — 0 known vulnerabilities | ✅ |
+| Control | Where |
+|---------|-------|
+| No OAuth token or client secret in the browser — the BFF holds them server-side | `bff/`, tested in `useApi.test.ts` / `useSSE.test.ts` |
+| `__Host-` session cookie: `HttpOnly`, `Secure`, `SameSite=Strict` | BFF (`backendkit/bff`) |
+| No valid session ⇒ 401; mutating calls need `X-CSRF-Token` ⇒ else 403 | BFF gateway |
+| Allowlist proxy (`/bff/*`, `/api/admin/*`); non-canonical paths refused | `bff/server.go` |
+| Login bound to the browser that started it (login CSRF / session swap) | `bff/auth.go` |
+| Step-up for destructive actions, elevated token kept server-side | `/bff/elevate` |
+| Per-IP budgets on login and step-up; `X-Forwarded-For` trusted only from loopback | `bff/ratelimit.go` |
+| Logout revokes the tokens at the issuer (RFC 7009) | `bff/auth.go` |
+| Content Security Policy and security headers | `deploy/Caddyfile`, `index.html` |
+| Dependency advisories gate CI (`npm-audit-gate.sh`, high/critical) | `.github/workflows/ci.yml` |
+
+The full list, the deployment requirements and how to report a vulnerability are in
+[SECURITY.md](SECURITY.md).
 
 ---
 
 ## Project Structure
 
 ```
+bff/                            # Go Backend-for-Frontend (confidential OAuth client, session→bearer proxy)
+deploy/                         # Caddy site, systemd units, build/ship/install scripts
+docs/adr/                       # Architecture decision records (ADR-0001: the BFF)
 src/
 ├── components/
-│   └── ErrorBoundary.vue      # Global error boundary
+│   ├── ErrorBoundary.vue       # Global error boundary
+│   ├── StepUpDialog.vue        # Re-authentication dialog for Tier-0 actions
+│   └── VersionBadge.vue        # Console and server versions
 ├── composables/
-│   ├── useApi.ts              # Authenticated fetch + API methods
-│   └── useSSE.ts              # Server-Sent Events client
+│   ├── useApi.ts               # Same-origin cookie fetch (+ X-CSRF-Token) and API methods
+│   ├── useSSE.ts               # Server-Sent Events client (same-origin, cookie)
+│   ├── usePolicyDecisions.ts   # State behind the access-policy decision log
+│   ├── useVersionCheck.ts      # Stale-tab detection after a deploy
+│   └── useVersionInfo.ts       # Read-only version info for components
 ├── router/
-│   └── index.ts               # Route guards (auth + RBAC)
+│   └── index.ts                # Route guards (auth + viewer/admin roles)
 ├── stores/
-│   ├── authStore.ts           # Auth state, PKCE, token management
-│   └── monitorStore.ts        # Dashboard data state
-├── views/
-│   ├── SetupView.vue          # Pre-login server URL wizard
-│   ├── LoginView.vue          # OAuth2 login trigger
-│   ├── CallbackView.vue       # OAuth2 callback + CSRF guard
-│   ├── DashboardView.vue      # Main dashboard
-│   ├── SettingsView.vue       # Post-login settings (in-memory)
-│   └── UnauthorisedView.vue   # Access denied page
-└── __tests__/                 # Vitest test suite
+│   ├── authStore.ts            # Session bootstrap from /bff/session, roles
+│   ├── monitorStore.ts         # Dashboard data state
+│   ├── stepUpStore.ts          # Coordinates the step-up dialog and retry
+│   └── version.ts              # Build-time version constants
+├── utils/
+│   ├── logger.ts               # Central logger (loglevel)
+│   └── policy.ts               # Labels for policy decisions
+├── views/                      # Viewer (read-only): Dashboard, Events, Threats, Sessions,
+│                               #   Tokens, Reports, Geo, PolicyDecisions
+│                               # Admin (write): Alerts, BlockedIPs, AuditLogs, Settings
+│                               # Public: Login (hands off to /bff/login), Unauthorised
+└── __tests__/                  # Vitest test suite
 ```
+
+---
+
+## Contributing
+
+Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers the development setup, the
+security rules this console must keep, the required checks and the pull-request flow. Notable
+changes are recorded in [CHANGELOG.md](CHANGELOG.md).
+
+## Security
+
+Please report vulnerabilities privately through the repository's **Security** tab → **Report a
+vulnerability**, not in a public issue. See [SECURITY.md](SECURITY.md).
+
+## License
+
+The monitoring console is licensed under the [Apache License 2.0](LICENSE).
