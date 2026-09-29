@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useMonitorStore } from '@/stores/monitorStore'
+import { useChartTheme } from '@/composables/useChartTheme'
 import { useApi } from '@/composables/useApi'
 import { useToast } from 'primevue/usetoast'
 import { format, formatDistanceToNow } from 'date-fns'
@@ -98,7 +99,8 @@ const countryChart = computed(() => {
   }
 })
 
-const countryChartOptions = {
+const chart = useChartTheme()
+const countryChartOptions = computed(() => ({
   indexAxis: 'y' as const,
   responsive: true,
   maintainAspectRatio: false,
@@ -106,7 +108,7 @@ const countryChartOptions = {
     legend: {
       position: 'bottom' as const,
       labels: {
-        color: '#94a3b8',
+        color: chart.value.legend,
         usePointStyle: true,
         padding: 20
       }
@@ -115,16 +117,16 @@ const countryChartOptions = {
   scales: {
     x: {
       stacked: true,
-      grid: { color: 'rgba(255,255,255,0.05)' },
-      ticks: { color: '#64748b' }
+      grid: { color: chart.value.grid },
+      ticks: { color: chart.value.tick }
     },
     y: {
       stacked: true,
       grid: { display: false },
-      ticks: { color: '#94a3b8' }
+      ticks: { color: chart.value.legend }
     }
   }
-}
+}))
 
 // Country pie chart for distribution
 const countryPieChart = computed(() => {
@@ -140,21 +142,21 @@ const countryPieChart = computed(() => {
   }
 })
 
-const pieChartOptions = {
+const pieChartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
     legend: {
       position: 'right' as const,
       labels: {
-        color: '#94a3b8',
+        color: chart.value.legend,
         usePointStyle: true,
         padding: 15,
         font: { size: 11 }
       }
     }
   }
-}
+}))
 
 // Country code to flag emoji
 function countryFlag(code: string): string {

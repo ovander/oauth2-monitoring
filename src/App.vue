@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import { useMonitorStore } from '@/stores/monitorStore'
+import { useThemeStore } from '@/stores/themeStore'
 import { useVersionCheck } from '@/composables/useVersionCheck'
 import ErrorBoundary from '@/components/ErrorBoundary.vue'
 import VersionBadge from '@/components/VersionBadge.vue'
@@ -14,6 +15,7 @@ const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const monitorStore = useMonitorStore()
+const themeStore = useThemeStore()
 
 // Stale-tab detection — polls /api/version every 5 min, shows a toast on change
 useVersionCheck()
@@ -122,6 +124,15 @@ async function logout() {
               {{ authStore.user?.email || authStore.user?.sub }}
             </div>
           </div>
+          <button
+            @click="themeStore.toggleTheme()"
+            class="quick-action"
+            :aria-label="themeStore.isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+            v-tooltip.top="themeStore.isDark ? 'Light mode' : 'Dark mode'"
+            data-testid="theme-toggle"
+          >
+            <i :class="['pi', themeStore.isDark ? 'pi-sun' : 'pi-moon', 'text-sm']"></i>
+          </button>
           <button
             @click="logout"
             class="quick-action danger"

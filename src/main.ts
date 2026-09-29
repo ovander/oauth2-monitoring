@@ -11,12 +11,16 @@ import App from './App.vue'
 import router from './router'
 import { useAuthStore } from '@/stores/authStore'
 import { useVersionStore } from '@/stores/version'
+import { useThemeStore } from '@/stores/themeStore'
 import './style.css'
 
 const app = createApp(App)
 
 const pinia = createPinia()
 app.use(pinia)
+
+// Apply the colour scheme before the first paint (cookie choice, else the system setting).
+useThemeStore()
 app.use(PrimeVue, {
   theme: {
     preset: Aura,

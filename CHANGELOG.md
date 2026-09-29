@@ -8,6 +8,10 @@ All notable changes to the Socrate monitoring console are documented here. The f
 
 ### Added
 
+- **Light theme and theme toggle**: the console now opens in a light colour scheme (following the
+  system setting on first visit) with a sun/moon toggle in the sidebar; the dark scheme moves from
+  near-black to slate. The choice is kept in a `theme` preference cookie, not in browser storage.
+  Charts read their axis, legend and grid colours from the palette so they follow the scheme.
 - **Tag-pinned deploys**: `build.sh`/`push.sh` take `REF` (this repo, or the first argument) and
   `SOCRATE_REF` (go-oauth2) and build each from a throwaway `git worktree` of that ref, so a release
   is exactly the committed source. The Socrate binaries are version-stamped (`-X
