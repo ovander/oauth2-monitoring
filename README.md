@@ -1,5 +1,9 @@
 # Socrate monitoring console
 
+[![CI](https://github.com/ovander/oauth2-monitoring/actions/workflows/ci.yml/badge.svg)](https://github.com/ovander/oauth2-monitoring/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/github/license/ovander/oauth2-monitoring)](LICENSE)
+[![Go version](https://img.shields.io/github/go-mod/go-version/ovander/oauth2-monitoring?filename=bff%2Fgo.mod)](bff/go.mod)
+
 > Watch what your identity provider is doing, live, without putting a token in the browser.
 
 The Socrate monitoring console is the security operations dashboard of the Socrate suite. It shows

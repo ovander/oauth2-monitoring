@@ -24,6 +24,7 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ### Changed
 
+- README: a row of self-updating badges (CI status, licence, Go version) under the title.
 - **Documentation** brought to the suite's standard: the README gains a pitch, prerequisites,
   architecture, the light/dark theme, screenshots and a regenerated project tree, and drops the
   history of the removed root `Dockerfile`, `nginx.conf` and `.env.production`; `.env.example`
