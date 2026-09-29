@@ -6,6 +6,15 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-29
+
+First tagged release of the Socrate monitoring console: a Vue 3 security operations dashboard with
+a Go Backend-for-Frontend that keeps every token server-side. It ships under Apache-2.0, with a
+light theme by default and a dark mode, nothing kept in browser storage, `/api/version` routed so
+the version badge and stale-tab detection work, and the badge showing the console and server
+builds with their toolchains. Requires Socrate v1.4.0 or later (v1.5.0 for the server toolchain in
+the badge).
+
 ### Added
 
 - **Build toolchains in the version badge**: a plain-text tooltip (`title` and `aria-label`) shows
@@ -82,4 +91,5 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 Changes before this changelog was introduced are in the git history.
 
-[Unreleased]: https://github.com/ovander/oauth2-monitoring/commits/main
+[Unreleased]: https://github.com/ovander/oauth2-monitoring/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/ovander/oauth2-monitoring/releases/tag/v1.0.0
