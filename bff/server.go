@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
 	"path"
 	"time"
 
@@ -12,8 +13,16 @@ import (
 )
 
 // adminPrefix is the only proxied path family. The BFF is an allowlist, never an
-// open proxy: anything outside this prefix (and /bff/*) is 404.
+// open proxy: anything outside this prefix, /bff/* and the exact versionRoute
+// below is 404.
 const adminPrefix = "/api/admin/"
+
+// versionRoute is Socrate's public version probe, which the SPA reads for the
+// server version badge and for stale-tab detection (useVersionCheck). It is an
+// exact method+path pattern: GET (and HEAD, which http.ServeMux matches with a
+// GET pattern) of "/api/version" only. Other methods get 405; "/api/version/"
+// and any longer path match nothing and get 404.
+const versionRoute = "GET /api/version"
 
 // Server is the BFF HTTP handler.
 //
@@ -26,6 +35,7 @@ const adminPrefix = "/api/admin/"
 type Server struct {
 	cfg     *Config
 	proxy   *httputil.ReverseProxy
+	version *httputil.ReverseProxy // public /api/version probe → issuer; nil without an issuer upstream
 	store   SessionStore
 	oauth   *oauthClient
 	gateway *bff.Gateway
@@ -51,6 +61,9 @@ func NewServerWithStore(cfg *Config, store SessionStore) *Server {
 	}
 
 	s := &Server{cfg: cfg, proxy: proxy}
+	if cfg.oauthURL != nil {
+		s.version = newVersionProxy(cfg.oauthURL)
+	}
 	if cfg.AuthEnabled() {
 		if store == nil {
 			store = NewMemorySessionStore(cfg.SessionIdle, cfg.SessionAbsolute)
@@ -89,7 +102,37 @@ func (s *Server) Handler() http.Handler {
 	} else {
 		mux.HandleFunc(adminPrefix, s.proxy.ServeHTTP)
 	}
+	// Public, unauthenticated, in both phases: it never goes through the
+	// session gateway, so no session bearer can be attached to it.
+	if s.version != nil {
+		mux.Handle(versionRoute, s.version)
+	}
 	return canonicalPathOnly(mux)
+}
+
+// newVersionProxy builds the reverse proxy for the public GET /api/version
+// probe.
+//
+// Upstream: the Socrate issuer listener (BFF_OAUTH_UPSTREAM, loopback :8080),
+// not the admin API. Socrate serves the same handler on both listeners, but
+// the issuer is the public one, where the probe is unauthenticated by design;
+// it is also the upstream the admin console's BFF uses for this route, so both
+// consoles report the same server version. The admin API stays reserved for
+// session-authenticated /api/admin/* traffic.
+//
+// The probe needs no credentials, so the browser's Cookie (which carries the
+// session id) and any Authorization header are dropped before the request
+// leaves the BFF: nothing identifying a session reaches the upstream.
+func newVersionProxy(upstream *url.URL) *httputil.ReverseProxy {
+	p := bff.NewSingleHostProxy(upstream)
+	director := p.Director
+	p.Director = func(r *http.Request) {
+		director(r)
+		r.Host = upstream.Host
+		r.Header.Del("Authorization")
+		r.Header.Del("Cookie")
+	}
+	return p
 }
 
 // canonicalPathOnly rejects any request whose path is not already in canonical

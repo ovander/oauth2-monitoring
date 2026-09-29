@@ -29,6 +29,13 @@ type phase2Harness struct {
 	elevateStatus int      // status the mock elevate endpoint returns (default 200)
 	revoked       []string // tokens the mock /oauth/revoke endpoint received
 
+	// The mock issuer also serves the public GET /api/version probe; these
+	// record what reached it.
+	versionCalls  int
+	versionMethod string
+	versionAuth   string // Authorization header the probe upstream saw
+	versionCookie string // Cookie header the probe upstream saw
+
 	// expiresIn is the access-token lifetime the mock token endpoint reports
 	// (default 3600). 0 makes every session start expired so the next proxied
 	// request must refresh.
@@ -61,6 +68,15 @@ func newPhase2HarnessWithStore(t *testing.T, store SessionStore) *phase2Harness 
 	}
 
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/version" {
+			h.versionCalls++
+			h.versionMethod = r.Method
+			h.versionAuth = r.Header.Get("Authorization")
+			h.versionCookie = r.Header.Get("Cookie")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(testVersionJSON))
+			return
+		}
 		_ = r.ParseForm()
 		if r.URL.Path == "/oauth/revoke" {
 			h.revoked = append(h.revoked, r.Form.Get("token"))

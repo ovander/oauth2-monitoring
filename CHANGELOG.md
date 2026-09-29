@@ -55,6 +55,13 @@ All notable changes to the Socrate monitoring console are documented here. Forma
   and setup views, tokens in memory, nginx headers, a session-less pass-through fallback). They now
   match the code: cookie-only SPA, server-side sessions, CSRF, step-up, and a BFF that refuses to
   start without a client unless the pass-through is enabled deliberately.
+- **The server version badge and stale-tab detection never worked**: nothing routed
+  `GET /api/version`, so Caddy answered it with the SPA's `index.html`, the JSON parse failed
+  quietly, the badge showed no server version and the "new version deployed" toast never fired.
+  The BFF now allowlists that exact path (`GET`/`HEAD` only; other methods `405`) and forwards it to
+  the Socrate issuer (`BFF_OAUTH_UPSTREAM`) with the browser's cookie and `Authorization` header
+  dropped, and `deploy/Caddyfile` and `bff/Caddyfile.example` route it to the BFF. Deploy note: add
+  `/api/version` to the host's `@bff` matcher.
 
 ### Removed
 
