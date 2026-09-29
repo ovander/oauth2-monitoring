@@ -1,5 +1,9 @@
+# MIRROR of go-oauth2/deploy/systemd/socrate.service (the canonical unit — that
+# repo owns the `socrate` binary). This copy exists so this kit's umbrella
+# bootstrap can install the server unit. Keep it BYTE-IDENTICAL to the canonical
+# file below the header; update the canonical one first, then mirror it here.
 [Unit]
-Description=Socrate OAuth 2.1 / OIDC server (OAuth :8080 public, admin API :8081 loopback)
+Description=Socrate OAuth 2.1 / OIDC server (public OAuth :8080, admin API :8081 loopback)
 Documentation=https://github.com/ovander/go-oauth2
 After=network-online.target postgresql.service
 Wants=network-online.target
@@ -9,7 +13,10 @@ Requires=postgresql.service
 Type=simple
 User=socrate
 Group=socrate
+WorkingDirectory=/var/lib/socrate
 EnvironmentFile=/etc/socrate/socrate.env
+# Canonical install path (matches the umbrella push.sh / install-remote.sh in the
+# oauth2-monitoring deploy kit, which is the authoritative full-stack runbook).
 ExecStart=/usr/local/bin/socrate
 Restart=on-failure
 RestartSec=5
@@ -35,9 +42,9 @@ SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
 CapabilityBoundingSet=
 AmbientCapabilities=
-# Socrate's RSA signing keys live on disk at KEYS_PATH and are rotated at
-# runtime, so that directory must be writable; everything else stays read-only
-# under ProtectSystem=strict. Keep this in sync with KEYS_PATH in socrate.env.
+# RSA signing keys (KEYS_PATH) are rotated at runtime, so the key directory must
+# be writable; everything else on the filesystem stays read-only under
+# ProtectSystem=strict. Keep KEYS_PATH in socrate.env pointed here.
 ReadWritePaths=/var/lib/socrate/keys
 
 [Install]
