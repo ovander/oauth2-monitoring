@@ -37,8 +37,8 @@ func withClientAttribution(next http.Handler) http.Handler {
 // (which withClientAttribution always sets) the header is still dropped, so a
 // browser-supplied value can never be left-most.
 func attributedProxy(p *httputil.ReverseProxy) *httputil.ReverseProxy {
-	director := p.Director
-	p.Director = func(r *http.Request) {
+	director := p.Director               //nolint:staticcheck // SA1019: wraps backendkit's Director-based NewSingleHostProxy; moving to Rewrite is a separate change
+	p.Director = func(r *http.Request) { //nolint:staticcheck // SA1019: wraps backendkit's Director-based NewSingleHostProxy; moving to Rewrite is a separate change
 		director(r)
 		r.Header.Del("X-Forwarded-For")
 		socrate.ApplyClientAttribution(r)

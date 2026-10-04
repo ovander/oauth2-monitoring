@@ -6,6 +6,14 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+### Changed
+- **The BFF declares Go 1.27.1** (`go 1.27.1` in `bff/go.mod`; was `go 1.25.0` with
+  `toolchain go1.27.1`, which `go mod tidy` now drops as redundant). Its language level and
+  `GODEBUG` defaults match the Go it is built, tested and shipped with. CI reads the Go version from
+  the `go` line when there is no `toolchain` line. The proxy keeps wrapping backendkit's
+  `httputil.ReverseProxy.Director` (deprecated since Go 1.26, still supported; marked for the
+  linter) until backendkit offers a `Rewrite`-based proxy.
+
 ## [1.0.1] - 2026-09-29
 
 Patch release. The BFF attributes its own Socrate calls (sign-in, refresh, sign-out, step-up) to
