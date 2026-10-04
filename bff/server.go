@@ -54,8 +54,8 @@ func NewServer(cfg *Config) *Server {
 // Postgres). A nil store falls back to the in-memory store when auth is enabled.
 func NewServerWithStore(cfg *Config, store SessionStore) *Server {
 	proxy := bff.NewSingleHostProxy(cfg.adminURL)
-	director := proxy.Director
-	proxy.Director = func(r *http.Request) {
+	director := proxy.Director               //nolint:staticcheck // SA1019: wraps backendkit's Director-based NewSingleHostProxy; moving to Rewrite is a separate change
+	proxy.Director = func(r *http.Request) { //nolint:staticcheck // SA1019: wraps backendkit's Director-based NewSingleHostProxy; moving to Rewrite is a separate change
 		director(r)
 		r.Host = cfg.adminURL.Host
 	}
@@ -127,8 +127,8 @@ func (s *Server) Handler() http.Handler {
 // leaves the BFF: nothing identifying a session reaches the upstream.
 func newVersionProxy(upstream *url.URL) *httputil.ReverseProxy {
 	p := bff.NewSingleHostProxy(upstream)
-	director := p.Director
-	p.Director = func(r *http.Request) {
+	director := p.Director               //nolint:staticcheck // SA1019: wraps backendkit's Director-based NewSingleHostProxy; moving to Rewrite is a separate change
+	p.Director = func(r *http.Request) { //nolint:staticcheck // SA1019: wraps backendkit's Director-based NewSingleHostProxy; moving to Rewrite is a separate change
 		director(r)
 		r.Host = upstream.Host
 		r.Header.Del("Authorization")

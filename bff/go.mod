@@ -1,11 +1,10 @@
 module github.com/ovander/oauth2-monitoring/bff
 
-go 1.25.0
-
-// The Go that builds, tests and ships this BFF. Go 1.25 is out of support
-// since Go 1.27's release. CI reads this line (go-version-file) and fails if
-// it or bff/Dockerfile's golang image drift apart.
-toolchain go1.27.1
+// The Go that builds, tests and ships this BFF: the language minimum, the
+// GODEBUG defaults and, with no toolchain line, the toolchain (GOTOOLCHAIN=auto
+// fetches it). CI reads this line (go-version-file) and fails if it or
+// bff/Dockerfile's golang image drift apart.
+go 1.27.1
 
 require (
 	github.com/jackc/pgx/v5 v5.9.2
