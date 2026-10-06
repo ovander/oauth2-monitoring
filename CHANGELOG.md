@@ -6,6 +6,14 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-06
+
+Minor release. Policy Decisions show the obligations a decision carried, and the security events
+include `custom_claim_missing` / `custom_claims_dropped`, the two signals for watching an
+application such as Lakebridge roll out (with Socrate v1.12.0). Vue 3.5.43 closes two high
+advisories, and the BFF declares Go 1.27.1. **Deploy notes:** no BFF environment variable, Caddy
+or CSP change; works with any Socrate, the new data appears with v1.12.0.
+
 ### Added
 - **Policy Decisions show the obligations a decision carried** ("Requires MFA, recent sign-in")
   in the list and the details. With Socrate v1.12.0, an application's allow whose obligation the
@@ -141,6 +149,7 @@ the badge).
 
 Changes before this changelog was introduced are in the git history.
 
-[Unreleased]: https://github.com/ovander/oauth2-monitoring/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/ovander/oauth2-monitoring/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/ovander/oauth2-monitoring/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/ovander/oauth2-monitoring/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ovander/oauth2-monitoring/releases/tag/v1.0.0
