@@ -6,6 +6,14 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+### Changed
+
+- `deploy/env/socrate.env.example` catches up with Socrate v1.12.0: `TRUSTED_PROXIES` at its
+  loopback default, and the opt-in controls (`ACCOUNT_SECURITY_PAGE`, `AUDIENCE_MODE`,
+  `SCOPE_POLICY_MODE`, `CLAIMS_NAMESPACE`, `POLICY_MODE`, `ADMIN_MFA_POLICY`,
+  `OPERATOR_CONSOLE_CLIENT_IDS`, `ADMIN_APP_SIGNIN_POLICY`, `ADMIN_API_AUDIENCE_MODE`,
+  `AUDIT_WRITE_MODE`) commented out at their defaults. A fresh install behaves as before.
+
 ## [1.1.0] - 2026-10-06
 
 Minor release. Policy Decisions show the obligations a decision carried, and the security events
