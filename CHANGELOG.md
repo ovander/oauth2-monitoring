@@ -6,6 +6,17 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+### Added
+- **Policy Decisions show the obligations a decision carried** ("Requires MFA, recent sign-in")
+  in the list and the details. With Socrate v1.12.0, an application's allow whose obligation the
+  user's token does not meet is logged as `obligation_unmet:<name>`, so shadow mode shows who would
+  be stopped for lack of MFA.
+- **Security events: `custom_claim_missing` and `custom_claims_dropped`** (Socrate v1.12.0), a
+  mapped claim a token did not get: a user attribute such as `tenant_id` missing, or the mapped set
+  dropped for its size. Labelled and filed under Token Lifecycle. Three server events the console
+  did not label yet are added with them: `scope_denied`, `admin_app_signin`,
+  `admin_api_audience`.
+
 ### Changed
 - **The BFF declares Go 1.27.1** (`go 1.27.1` in `bff/go.mod`; was `go 1.25.0` with
   `toolchain go1.27.1`, which `go mod tidy` now drops as redundant). Its language level and

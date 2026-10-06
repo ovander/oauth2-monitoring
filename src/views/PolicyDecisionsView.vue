@@ -14,7 +14,7 @@ import Dialog from 'primevue/dialog'
 import Message from 'primevue/message'
 
 import { usePolicyDecisions } from '@/composables/usePolicyDecisions'
-import { reasonLabel, divergenceLabel, sourceLabel, outcome, principalLabel } from '@/utils/policy'
+import { reasonLabel, divergenceLabel, sourceLabel, outcome, principalLabel, obligationsLabel } from '@/utils/policy'
 import type { PolicyDecisionRecord } from '@/types'
 
 const route = useRoute()
@@ -188,6 +188,7 @@ onMounted(() => {
             <div class="text-sm">{{ reasonLabel(data.reason) }}</div>
             <div v-if="data.rule" class="font-mono text-xs text-[var(--color-text-muted)]">{{ data.rule }} · v{{ data.policy_version }}</div>
             <div v-if="data.divergence" class="text-xs text-[var(--color-status-warning)]">{{ divergenceLabel(data.divergence) }}</div>
+            <div v-if="data.obligations?.length" class="text-xs text-[var(--color-text-muted)]">Requires {{ obligationsLabel(data.obligations) }}</div>
           </template>
         </Column>
         <Column header="Who">
@@ -222,6 +223,7 @@ onMounted(() => {
         <div><div class="text-xs text-[var(--color-text-muted)] uppercase mb-1">Mode</div>{{ selected.mode }}{{ selected.enforced ? ' (honoured)' : '' }}</div>
         <div class="col-span-2"><div class="text-xs text-[var(--color-text-muted)] uppercase mb-1">Action</div><span class="font-mono">{{ selected.action }}</span></div>
         <div class="col-span-2"><div class="text-xs text-[var(--color-text-muted)] uppercase mb-1">Why</div>{{ reasonLabel(selected.reason) }}<span v-if="selected.rule" class="font-mono"> — rule {{ selected.rule }}, policy v{{ selected.policy_version }}</span></div>
+        <div v-if="selected.obligations?.length" class="col-span-2"><div class="text-xs text-[var(--color-text-muted)] uppercase mb-1">Obligations</div>{{ obligationsLabel(selected.obligations) }} <span class="font-mono text-xs">({{ selected.obligations.join(', ') }})</span></div>
         <div v-if="selected.divergence" class="col-span-2"><div class="text-xs text-[var(--color-text-muted)] uppercase mb-1">Divergence</div>{{ divergenceLabel(selected.divergence) }} (the request ended with HTTP {{ selected.status_code }})</div>
         <div><div class="text-xs text-[var(--color-text-muted)] uppercase mb-1">Source</div>{{ sourceLabel(selected.source) }}</div>
         <div><div class="text-xs text-[var(--color-text-muted)] uppercase mb-1">Who</div>{{ principalLabel(selected) }}</div>

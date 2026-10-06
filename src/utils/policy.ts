@@ -21,6 +21,19 @@ export function reasonLabel(reason: string): string {
   return REASONS[reason] ?? reason
 }
 
+const OBLIGATIONS: Record<string, string> = {
+  require_mfa:        'MFA',
+  require_fresh_auth: 'recent sign-in',
+}
+
+/**
+ * The obligations a decision carried, in words ("MFA, recent sign-in"), or ''
+ * when there are none. Unknown names are kept as they are.
+ */
+export function obligationsLabel(obligations?: string[]): string {
+  return (obligations ?? []).map(o => OBLIGATIONS[o] ?? o).join(', ')
+}
+
 const DIVERGENCES: Record<string, string> = {
   pdp_deny_code_allow: 'Policy stricter than the built-in checks',
   pdp_allow_code_deny: 'Policy looser than the built-in checks',
