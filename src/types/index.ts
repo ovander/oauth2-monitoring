@@ -18,7 +18,7 @@ export type SecurityEventType =
   | 'refresh_token_reuse' | 'client_auth_failed'
   // OAuth 2.1 authorization-code + PKCE flow
   | 'auth_code_issued' | 'auth_code_exchanged' | 'auth_code_failed'
-  | 'pkce_validation_failed'
+  | 'pkce_validation_failed' | 'scope_denied'
   // Delegation (RFC 8693 token exchange)
   | 'token_exchange'
   // Sender-constrained tokens (DPoP, RFC 9449)
@@ -27,6 +27,10 @@ export type SecurityEventType =
   | 'client_created' | 'client_updated' | 'client_deleted' | 'client_secret_rotated'
   // MFA / step-up (RFC-011)
   | 'mfa_policy_violation' | 'mfa_recovery_code_used'
+  // Operator-console boundaries (ADMIN_APP_SIGNIN_POLICY, ADMIN_API_AUDIENCE_MODE)
+  | 'admin_app_signin' | 'admin_api_audience'
+  // Custom claims (A2): a mapped claim a token did not get
+  | 'custom_claim_missing' | 'custom_claims_dropped'
   // Threat detection & integrity
   | 'suspicious_activity' | 'rate_limit_exceeded' | 'brute_force_detected'
   | 'audit_integrity_violation'
@@ -456,6 +460,11 @@ export const EVENT_TYPE_LABELS: Record<string, string> = {
   client_secret_rotated: 'Client Secret Rotated',
   mfa_policy_violation: 'MFA Policy Violation',
   mfa_recovery_code_used: 'MFA Recovery Code Used',
+  scope_denied: 'Scope Denied',
+  admin_app_signin: 'Admin Sign-in to an App',
+  admin_api_audience: 'Admin API: Non-console Token',
+  custom_claim_missing: 'Custom Claim Missing',
+  custom_claims_dropped: 'Custom Claims Dropped',
   suspicious_activity: 'Suspicious Activity',
   rate_limit_exceeded: 'Rate Limit Exceeded',
   brute_force_detected: 'Brute Force Detected',
@@ -525,6 +534,11 @@ export const EVENT_TYPE_CATEGORIES: Record<SecurityEventType, EventCategory> = {
   client_secret_rotated: 'client',
   mfa_policy_violation: 'mfa',
   mfa_recovery_code_used: 'mfa',
+  scope_denied: 'oauth',
+  admin_app_signin: 'authentication',
+  admin_api_audience: 'token',
+  custom_claim_missing: 'token',
+  custom_claims_dropped: 'token',
   suspicious_activity: 'threat',
   rate_limit_exceeded: 'threat',
   brute_force_detected: 'threat',
@@ -656,6 +670,8 @@ export interface PolicyDecisionRecord {
   resource_id?: string
   ip_address?: string
   status_code?: number
+  /** Obligations the decision carried (Socrate v1.12.0+): require_mfa, require_fresh_auth. */
+  obligations?: string[]
 }
 
 export interface PolicyDecisionFilter {

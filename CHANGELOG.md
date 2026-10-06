@@ -6,6 +6,17 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+### Added
+- **Policy Decisions show the obligations a decision carried** ("Requires MFA, recent sign-in")
+  in the list and the details. With Socrate v1.12.0, an application's allow whose obligation the
+  user's token does not meet is logged as `obligation_unmet:<name>`, so shadow mode shows who would
+  be stopped for lack of MFA.
+- **Security events: `custom_claim_missing` and `custom_claims_dropped`** (Socrate v1.12.0), a
+  mapped claim a token did not get: a user attribute such as `tenant_id` missing, or the mapped set
+  dropped for its size. Labelled and filed under Token Lifecycle. Three server events the console
+  did not label yet are added with them: `scope_denied`, `admin_app_signin`,
+  `admin_api_audience`.
+
 ### Security
 - **Vue 3.5.43** (was 3.5.29) and **source-map-js 1.2.2** (was 1.2.1), lockfile only: they close
   GHSA-g2v6-rqmx-r4w6 (`@vue/server-renderer`, XSS through an attribute name with a carriage

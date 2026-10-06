@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { reasonLabel, divergenceLabel, sourceLabel, outcome, principalLabel, sinceFromPeriod } from '@/utils/policy'
+import { reasonLabel, divergenceLabel, sourceLabel, outcome, principalLabel, sinceFromPeriod, obligationsLabel } from '@/utils/policy'
 
 describe('policy labels', () => {
   it('explains reasons, keeping unmet obligations and unknown codes', () => {
@@ -7,6 +7,12 @@ describe('policy labels', () => {
     expect(reasonLabel('subject_locked')).toMatch(/locked/)
     expect(reasonLabel('obligation_unmet:require_fresh_auth')).toBe('Denied — obligation not met (require_fresh_auth)')
     expect(reasonLabel('new_reason')).toBe('new_reason')
+  })
+  it('names the obligations a decision carried, keeping unknown ones', () => {
+    expect(obligationsLabel(['require_mfa', 'require_fresh_auth'])).toBe('MFA, recent sign-in')
+    expect(obligationsLabel(['require_hardware_key'])).toBe('require_hardware_key')
+    expect(obligationsLabel([])).toBe('')
+    expect(obligationsLabel(undefined)).toBe('')
   })
   it('explains divergences and sources', () => {
     expect(divergenceLabel('pdp_deny_code_allow')).toMatch(/stricter/)
