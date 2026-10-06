@@ -6,6 +6,13 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+### Security
+- **Vue 3.5.43** (was 3.5.29) and **source-map-js 1.2.2** (was 1.2.1), lockfile only: they close
+  GHSA-g2v6-rqmx-r4w6 (`@vue/server-renderer`, XSS through an attribute name with a carriage
+  return) and GHSA-68fv-2mgg-jv7q (`source-map-js`, denial of service through indexed source-map
+  offsets), both high, which made the production `npm audit` gate fail on `main`. Patch releases
+  of Babel, PostCSS and nanoid come with them. No `package.json` change.
+
 ### Changed
 - **The BFF declares Go 1.27.1** (`go 1.27.1` in `bff/go.mod`; was `go 1.25.0` with
   `toolchain go1.27.1`, which `go mod tidy` now drops as redundant). Its language level and
