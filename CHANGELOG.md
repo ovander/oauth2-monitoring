@@ -6,6 +6,13 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+### Changed
+
+- BFF: backendkit v1.15.0 → v1.21.0. The BFF code is unchanged and no exported identifier it uses
+  changed. The upgrade brings fail-closed handling of a `client_credentials` response without an
+  access token, the service-token expiry read from its `exp` claim, and a startup warning in
+  `jwtauth` when no audience is configured (the BFF does not use `jwtauth`).
+
 ## [1.1.0] - 2026-10-06
 
 Minor release. Policy Decisions show the obligations a decision carried, and the security events
