@@ -8,6 +8,10 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ### Changed
 
+- BFF: backendkit v1.15.0 → v1.21.0. The BFF code is unchanged and no exported identifier it uses
+  changed. The upgrade brings fail-closed handling of a `client_credentials` response without an
+  access token, the service-token expiry read from its `exp` claim, and a startup warning in
+  `jwtauth` when no audience is configured (the BFF does not use `jwtauth`).
 - `deploy/env/socrate.env.example` catches up with Socrate v1.12.0: `TRUSTED_PROXIES` at its
   loopback default, and the opt-in controls (`ACCOUNT_SECURITY_PAGE`, `AUDIENCE_MODE`,
   `SCOPE_POLICY_MODE`, `CLAIMS_NAMESPACE`, `POLICY_MODE`, `ADMIN_MFA_POLICY`,
