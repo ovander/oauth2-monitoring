@@ -6,6 +6,13 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-06
+
+Patch release: the BFF is built on backendkit v1.21.0 (was v1.15.0), with no BFF or SPA code
+change, and the Socrate env template lists the opt-in controls up to Socrate v1.12.x. **Deploy
+notes:** no BFF environment variable, Caddy or CSP change; the live `/etc/socrate/socrate.env` is
+not touched.
+
 ### Changed
 
 - BFF: backendkit v1.15.0 → v1.21.0. The BFF code is unchanged and no exported identifier it uses
@@ -161,7 +168,8 @@ the badge).
 
 Changes before this changelog was introduced are in the git history.
 
-[Unreleased]: https://github.com/ovander/oauth2-monitoring/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/ovander/oauth2-monitoring/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/ovander/oauth2-monitoring/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/ovander/oauth2-monitoring/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/ovander/oauth2-monitoring/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ovander/oauth2-monitoring/releases/tag/v1.0.0
