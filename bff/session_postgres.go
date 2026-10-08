@@ -62,6 +62,9 @@ func (s *PostgresSessionStore) migrate(ctx context.Context) error {
 			return_to  text        NOT NULL,
 			created_at timestamptz NOT NULL
 		);
+		-- The LoginBinding nonce: without it the callback's Verify never matches
+		-- and every sign-in fails. Added to tables created before it existed.
+		ALTER TABLE bff_login_states ADD COLUMN IF NOT EXISTS nonce text NOT NULL DEFAULT '';
 	`)
 	return err
 }
@@ -79,11 +82,11 @@ func (s *PostgresSessionStore) PutLogin(state string, ls loginState) {
 	ctx, cancel := opCtx()
 	defer cancel()
 	if _, err := s.pool.Exec(ctx, `
-		INSERT INTO bff_login_states (state, verifier, return_to, created_at)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO bff_login_states (state, verifier, return_to, nonce, created_at)
+		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (state) DO UPDATE SET verifier = EXCLUDED.verifier,
-			return_to = EXCLUDED.return_to, created_at = EXCLUDED.created_at`,
-		state, ls.Verifier, ls.ReturnTo, ls.Created); err != nil {
+			return_to = EXCLUDED.return_to, nonce = EXCLUDED.nonce, created_at = EXCLUDED.created_at`,
+		state, ls.Verifier, ls.ReturnTo, ls.Nonce, ls.Created); err != nil {
 		log.Printf("bff/pg: put login state: %v", err)
 	}
 }
@@ -94,8 +97,8 @@ func (s *PostgresSessionStore) TakeLogin(state string) (loginState, bool) {
 	var ls loginState
 	// Single-use: delete and return in one statement.
 	err := s.pool.QueryRow(ctx,
-		`DELETE FROM bff_login_states WHERE state = $1 RETURNING verifier, return_to, created_at`,
-		state).Scan(&ls.Verifier, &ls.ReturnTo, &ls.Created)
+		`DELETE FROM bff_login_states WHERE state = $1 RETURNING verifier, return_to, nonce, created_at`,
+		state).Scan(&ls.Verifier, &ls.ReturnTo, &ls.Nonce, &ls.Created)
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			log.Printf("bff/pg: take login state: %v", err)

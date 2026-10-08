@@ -6,6 +6,15 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+### Fixed
+- **Sign-in with the Postgres session store (`BFF_SESSION_DSN`) failed every time.** The login
+  state table had no column for the `LoginBinding` nonce, so the callback read back an empty nonce,
+  and `LoginBinding.Verify` (which never matches an empty value) refused every sign-in. It failed
+  closed, so this was a broken login, not a security hole; the default in-memory store was not
+  affected. The store now adds `bff_login_states.nonce` (`ADD COLUMN IF NOT EXISTS`, so existing
+  tables are upgraded at startup) and stores and returns it. The Postgres store's tests now run in
+  CI against a scratch Postgres instead of being skipped.
+
 ## [1.1.1] - 2026-10-06
 
 Patch release: the BFF is built on backendkit v1.21.0 (was v1.15.0), with no BFF or SPA code
