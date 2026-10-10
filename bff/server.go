@@ -36,7 +36,8 @@ type Server struct {
 	cfg     *Config
 	proxy   *httputil.ReverseProxy
 	version *httputil.ReverseProxy // public /api/version probe → issuer; nil without an issuer upstream
-	store   SessionStore
+	stores  *stores
+	store   bff.SessionStore // == stores.sessions
 	oauth   *oauthClient
 	gateway *bff.Gateway
 	login   bff.LoginBinding // ties /bff/login to the browser that must finish it at /bff/callback
@@ -45,14 +46,15 @@ type Server struct {
 	elevateLimiter *rateLimiter // per-IP budget for /bff/elevate
 }
 
-// NewServer builds a Server with the default (in-memory) session store.
+// NewServer builds a Server with the default (in-memory) stores.
 func NewServer(cfg *Config) *Server {
-	return NewServerWithStore(cfg, nil)
+	return NewServerWithStores(cfg, nil)
 }
 
-// NewServerWithStore builds a Server with an explicit session store (e.g.
-// Postgres). A nil store falls back to the in-memory store when auth is enabled.
-func NewServerWithStore(cfg *Config, store SessionStore) *Server {
+// NewServerWithStores builds a Server with explicit stores (e.g. Postgres,
+// from openStores). When auth is enabled, a nil st, or a nil field of it,
+// falls back to the in-memory store.
+func NewServerWithStores(cfg *Config, st *stores) *Server {
 	proxy := bff.NewSingleHostProxy(cfg.adminURL)
 	director := proxy.Director               //nolint:staticcheck // SA1019: wraps backendkit's Director-based NewSingleHostProxy; moving to Rewrite is a separate change
 	proxy.Director = func(r *http.Request) { //nolint:staticcheck // SA1019: wraps backendkit's Director-based NewSingleHostProxy; moving to Rewrite is a separate change
@@ -65,12 +67,21 @@ func NewServerWithStore(cfg *Config, store SessionStore) *Server {
 		s.version = newVersionProxy(cfg.oauthURL)
 	}
 	if cfg.AuthEnabled() {
-		if store == nil {
-			store = NewMemorySessionStore(cfg.SessionIdle, cfg.SessionAbsolute)
+		mem := newMemoryStores(cfg.SessionIdle, cfg.SessionAbsolute)
+		if st == nil {
+			st = mem
 		}
-		s.store = store
+		if st.sessions == nil {
+			st.sessions = mem.sessions
+		}
+		if st.pending == nil {
+			st.pending = mem.pending
+		}
+		s.stores, s.store = st, st.sessions
 		s.oauth = newOAuthClient(cfg)
-		s.login = bff.LoginBinding{Cookie: bff.CookieConfig{Name: "mon_login", Secure: cfg.CookieSecure}, TTL: 10 * time.Minute}
+		// The binding cookie lives exactly as long as the pending login it
+		// guards (bff.DefaultPendingLoginTTL == bff.DefaultLoginBindingTTL).
+		s.login = bff.LoginBinding{Cookie: bff.CookieConfig{Name: "mon_login", Secure: cfg.CookieSecure}, TTL: bff.DefaultLoginBindingTTL}
 		s.loginLimiter = newRateLimiter(cfg.LoginRate, rateWindow)
 		s.elevateLimiter = newRateLimiter(cfg.ElevateRate, rateWindow)
 		s.gateway = &bff.Gateway{
@@ -158,15 +169,11 @@ func canonicalPathOnly(next http.Handler) http.Handler {
 	})
 }
 
-// sweepable is implemented by stores that prune expired rows in bulk.
-type sweepable interface{ Sweep() }
-
-// StartSweeper periodically prunes expired sessions/login-state and the per-IP
-// rate-limiter windows until ctx is cancelled. It is a no-op only when there is
-// nothing to sweep (Phase 1: no sweepable store and no limiters).
+// StartSweeper periodically prunes expired sessions, pending logins and the
+// per-IP rate-limiter windows until ctx is cancelled. It is a no-op only when
+// there is nothing to sweep (Phase 1: no stores and no limiters).
 func (s *Server) StartSweeper(ctx context.Context) {
-	sw, _ := s.store.(sweepable)
-	if sw == nil && s.loginLimiter == nil && s.elevateLimiter == nil {
+	if s.stores == nil && s.loginLimiter == nil && s.elevateLimiter == nil {
 		return
 	}
 	go func() {
@@ -177,39 +184,28 @@ func (s *Server) StartSweeper(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				if sw != nil {
-					sw.Sweep()
-				}
-				if s.loginLimiter != nil {
-					s.loginLimiter.sweep()
-				}
-				if s.elevateLimiter != nil {
-					s.elevateLimiter.sweep()
-				}
+				s.sweepOnce(ctx)
 			}
 		}
 	}()
 }
 
+// sweepOnce is one tick of the sweeper.
+func (s *Server) sweepOnce(ctx context.Context) {
+	if s.stores != nil {
+		s.stores.sweep(ctx)
+	}
+	if s.loginLimiter != nil {
+		s.loginLimiter.sweep()
+	}
+	if s.elevateLimiter != nil {
+		s.elevateLimiter.sweep()
+	}
+}
+
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
-}
-
-// toucher is implemented by stores that can slide a session's idle window
-// WITHOUT re-creating the row (P3-29). Put is an upsert: a /bff/session call
-// racing a logout could Get the session just before Delete ran and then Put it
-// straight back — resurrecting a session whose tokens were just revoked. Touch
-// is an UPDATE that is a no-op once the row is gone.
-type toucher interface {
-	Touch(sess *bff.Session)
-}
-
-// sessionDeleter is implemented by stores that can report a failed Delete
-// (P3-28). The shared bff.SessionStore.Delete has no error return; a logout
-// whose server-side delete failed must not look like a clean logout.
-type sessionDeleter interface {
-	DeleteSession(id string) error
 }
 
 // currentSession resolves the session referenced by the request's cookie and
@@ -221,22 +217,32 @@ func (s *Server) currentSession(_ http.ResponseWriter, r *http.Request) *bff.Ses
 		return nil
 	}
 	sess.Touch(time.Now())
-	if t, ok := s.store.(toucher); ok {
-		t.Touch(sess)
-	} else {
-		s.store.Put(sess)
-	}
+	s.writeBack(sess)
 	return sess
 }
 
-// deleteSession removes the session and reports a store failure when the
-// store can surface one.
-func (s *Server) deleteSession(id string) error {
-	if d, ok := s.store.(sessionDeleter); ok {
-		return d.DeleteSession(id)
+// writeBack persists a change to an existing session (a slid idle window, a
+// step-up token) without ever re-creating one that a racing logout deleted
+// (P3-29): a /bff/session that read the session just before the logout's
+// Delete must not put it straight back, with tokens that were just revoked.
+//
+//   - bff.MemoryStore hands out the very *Session it holds, so the change is
+//     already in the store. Its Put is an unconditional insert, so it is
+//     skipped: it could only re-insert a deleted session.
+//   - bff.PostgresStore rehydrates a fresh *Session per Get, so the change
+//     must be written. Its Put never re-creates a deleted session: Delete
+//     leaves a tombstone (bff.PostgresStoreTombstoneTTL) and the upsert only
+//     updates rows that are not tombstoned.
+func (s *Server) writeBack(sess *bff.Session) {
+	if _, inMemory := s.store.(*bff.MemoryStore); inMemory {
+		return
 	}
-	s.store.Delete(id)
-	return nil
+	s.store.Put(sess)
+}
+
+// deleteSession removes the session and reports a store failure (P3-28).
+func (s *Server) deleteSession(id string) error {
+	return s.stores.deleteSession(id)
 }
 
 func writeJSON(w http.ResponseWriter, v any, status ...int) {

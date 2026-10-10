@@ -95,7 +95,7 @@ Rendered from the production build with sample data.
 | Logging | loglevel 1.9 (levels are not persisted) |
 | Build | Vite 7, vue-tsc 3 |
 | Tests | Vitest 4, @vue/test-utils 2, jsdom |
-| Backend-for-Frontend | Go (toolchain in `bff/go.mod`), `ovander/backendkit` v1.12 (`bff` package), pgx v5 for the optional Postgres session store |
+| Backend-for-Frontend | Go (toolchain in `bff/go.mod`), `ovander/backendkit` v1.25 (`bff` package: gateway, session and pending-login stores), pgx v5 (`database/sql` driver) for the optional Postgres stores |
 
 ---
 
@@ -121,8 +121,8 @@ Browser ──redirect──► socrate.example.com/oauth/authorize (sign-in at 
 - The SPA bootstraps from `GET /bff/session`, which returns the user, roles and CSRF token.
   Signing in is a full-page navigation to `/bff/login`; the callback is handled by the BFF.
 - The BFF runs Authorization Code + PKCE as a confidential client, keeps the tokens in a
-  server-side session (in memory, or in Postgres with `BFF_SESSION_DSN`) and injects the bearer
-  on every proxied call, including the Server-Sent Events stream.
+  server-side session (in memory, or encrypted in Postgres with `BFF_SESSION_DSN`) and injects
+  the bearer on every proxied call, including the Server-Sent Events stream.
 - A request without a valid session gets `401`; an unsafe method without the session's
   `X-CSRF-Token` gets `403`. `GET /api/version` is the one public route: no session, and no
   cookie or bearer forwarded. Anything outside `/bff/*`, `/api/admin/*` and `GET /api/version`
@@ -140,12 +140,11 @@ Details: [`bff/README.md`](bff/README.md) and [`deploy/README.md`](deploy/README
 │   ├── main.go, config.go        # Entry point; environment configuration
 │   ├── server.go, auth.go        # Allowlist routing; the /bff/* login, session and step-up routes
 │   ├── oauth.go, ratelimit.go    # Token endpoint calls; per-IP budgets
-│   ├── session.go                # In-memory session store
-│   ├── session_postgres.go       # Optional durable Postgres session store
+│   ├── stores.go                 # Session and pending-login stores (backendkit; memory or Postgres)
 │   ├── Dockerfile                # Distroless image
 │   └── Caddyfile.example         # Minimal Caddy site for the console
 ├── deploy/                       # Single-host deploy kit: Caddyfile, systemd units, env
-│                                 #   templates, build/push/install/backup scripts
+│                                 #   templates, build/push/install/backup scripts, sql/
 ├── docs/adr/                     # Architecture decision records (ADR-0001: the BFF)
 ├── public/                       # Static assets copied as-is
 ├── scripts/npm-audit-gate.sh     # Dependency-advisory gate used by CI
@@ -340,7 +339,6 @@ The Socrate monitoring console is in active use as part of the Socrate suite. Cu
   Socrate accepts; request them with `BFF_SCOPES`.
 - Sender-constrained tokens (DPoP, RFC 9449) on the BFF to Socrate leg, which the BFF does not
   use yet.
-- Envelope encryption of the tokens held in the optional Postgres session store.
 
 ---
 

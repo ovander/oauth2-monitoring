@@ -73,6 +73,7 @@ first deploy:
 | `scripts/push.sh` | Builds, copies the artifacts to the host with rsync, installs and restarts |
 | `scripts/install-remote.sh` | Runs on the host: install, restart, health checks, rollback |
 | `scripts/backup-db.sh` | Postgres dump to `/var/backups/socrate` (cron or systemd timer) |
+| `sql/bff-session-store.sql` | Tables of the BFF's Postgres session and pending-login stores (only with `BFF_SESSION_DSN`) |
 
 ## Prerequisites (before you touch the host)
 
@@ -119,6 +120,12 @@ sudo -u postgres createuser socrate_bff
 sudo -u postgres createdb -O socrate_bff socrate_bff
 sudo -u postgres psql -c "ALTER ROLE socrate_bff WITH PASSWORD 'another-password';"
 #   → BFF_SESSION_DSN in bff.env
+# …its encryption key (32 random bytes, base64) → BFF_SESSION_KEY in bff.env:
+openssl rand -base64 32
+# …and its tables, created by their owner before the BFF starts (BFF_SESSION_SCHEMA=managed,
+# the default: the BFF runs no DDL and refuses to start without them):
+psql "postgres://socrate_bff:another-password@127.0.0.1:5432/socrate_bff" \
+  -f oauth2-monitoring/deploy/sql/bff-session-store.sql
 
 # Schema migration, once:
 #   set AUTO_MIGRATE=true in socrate.env, start socrate, confirm it is up, set it back to false.
@@ -204,6 +211,32 @@ sudo systemctl enable --now socrate socrate-monitoring-bff
 sudo systemctl reload caddy
 ```
 
+## Upgrade notes
+
+### BFF session store: backendkit's encrypted stores (after v1.1.2)
+
+Only with `BFF_SESSION_DSN` set; with the in-memory store there is nothing to do. The BFF now
+keeps sessions and pending logins in backendkit's stores, in two new tables
+(`bff_store_sessions`, `bff_store_pending_logins`) whose rows are encrypted under
+`BFF_SESSION_KEY`. Before starting the new BFF:
+
+```bash
+openssl rand -base64 32                     # → BFF_SESSION_KEY in /etc/socrate/bff.env
+psql "postgres://socrate_bff:…@127.0.0.1:5432/socrate_bff" \
+  -f oauth2-monitoring/deploy/sql/bff-session-store.sql   # as socrate_bff, the tables' owner
+```
+
+Then deploy as usual. Sessions are not migrated: every operator signs in once more. Once the new
+BFF runs, drop the old tables, which may still hold plaintext refresh tokens:
+
+```bash
+psql "postgres://socrate_bff:…@127.0.0.1:5432/socrate_bff" \
+  -c 'DROP TABLE IF EXISTS bff_sessions, bff_login_states;'
+```
+
+A rollback to v1.1.2 or earlier re-creates the old tables at its start-up (and signs everyone
+out again); drop them again after rolling forward.
+
 ## Rollback
 
 `install-remote.sh` keeps the previous binaries under `/var/backups/socrate/<timestamp>/`. To roll
@@ -226,9 +259,10 @@ the other must-back-up item: lose them and every issued token becomes unverifiab
 ```bash
 # Manual dump (keeps the newest 14 by default):
 sudo -u postgres bash oauth2-monitoring/deploy/scripts/backup-db.sh
-# The dump excludes the rows of bff_sessions and bff_login_states: with BFF_SESSION_DSN set
-# they hold live OAuth tokens in plaintext, which must never end up in a backup file.
-# Operators simply sign in again after a restore.
+# The dump excludes the rows of the BFF's session tables (bff_store_sessions,
+# bff_store_pending_logins, and the former bff_sessions and bff_login_states): they are
+# short-lived state, encrypted or (for the former tables) plaintext tokens, which must never end
+# up in a backup file. Operators simply sign in again after a restore.
 
 # Schedule it: /etc/cron.d/socrate-backup
 30 3 * * *  postgres  /usr/local/bin/socrate-backup-db.sh >> /var/log/socrate-backup.log 2>&1
@@ -274,6 +308,7 @@ Top to bottom, the first time:
 - [ ] `bootstrap.sh` run; `/etc/socrate`, `/var/lib/socrate/keys` and `/srv/{monitoring,admin}/dist` exist.
 - [ ] `socrate.env` and `bff.env` filled (real `SECRET_KEY_BASE`, `DATABASE_URL`, `OAUTH_ISSUER`, `KEYS_PATH`); `socrate.env` is `0640 root:socrate`, `bff.env` is `0640 root:socrate-mon-bff`.
 - [ ] Postgres role and database created; password set and matching `DATABASE_URL`.
+- [ ] With `BFF_SESSION_DSN` only: `BFF_SESSION_KEY` set (`openssl rand -base64 32`) and `sql/bff-session-store.sql` run as the BFF database's owner.
 - [ ] Signing keys generated and copied to `/var/lib/socrate/keys` (`0700`, owner `socrate`).
 - [ ] Schema migrated once (`AUTO_MIGRATE=true`, start, back to `false`).
 - [ ] `push.sh` deployed the binaries and the SPA; the `install-remote.sh` health checks passed.
