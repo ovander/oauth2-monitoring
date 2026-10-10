@@ -144,86 +144,87 @@ func TestElevate_200WithoutTokenFailsClosed(t *testing.T) {
 	}
 }
 
-// ── P3-29: /bff/session must Touch, never Put (no resurrection after logout) ─
+// ── P3-29: writing a session back never resurrects one a logout deleted ─────
 
-// touchSpyStore wraps the memory store and records which write path the
-// handlers use for the idle-window slide.
-type touchSpyStore struct {
-	*MemorySessionStore
-	mu      sync.Mutex
-	puts    int
-	touches int
+// putSpyStore wraps a store and counts Put calls.
+type putSpyStore struct {
+	bff.SessionStore
+	mu   sync.Mutex
+	puts int
 }
 
-func (s *touchSpyStore) Put(sess *bff.Session) {
+func (s *putSpyStore) Put(sess *bff.Session) {
 	s.mu.Lock()
 	s.puts++
 	s.mu.Unlock()
-	s.MemorySessionStore.Put(sess)
+	s.SessionStore.Put(sess)
 }
 
-func (s *touchSpyStore) Touch(sess *bff.Session) {
-	s.mu.Lock()
-	s.touches++
-	s.mu.Unlock()
-	s.MemorySessionStore.Touch(sess)
-}
+// On the in-memory store the session a handler holds IS the stored one, so a
+// write-back after a racing Delete must not put it back: bff.MemoryStore.Put
+// is an unconditional insert. (The Postgres side is
+// TestPostgresStores_PutNeverResurrectsADeletedSession.)
+func TestWriteBackDoesNotResurrectADeletedMemorySession(t *testing.T) {
+	h := newPhase2Harness(t)
+	cookie, _ := h.login(t)
 
-func TestSessionEndpointTouchesInsteadOfPut(t *testing.T) {
-	store := &touchSpyStore{MemorySessionStore: NewMemorySessionStore(30*time.Minute, 8*time.Hour)}
-	h := newPhase2HarnessWithStore(t, store)
-	cookie, _ := h.login(t) // callback Put + one /bff/session inside login()
-
-	store.mu.Lock()
-	putsAfterLogin := store.puts
-	store.mu.Unlock()
-
-	for i := 0; i < 3; i++ {
-		if rec := h.do(http.MethodGet, "/bff/session", cookie); rec.Code != http.StatusOK {
-			t.Fatalf("session = %d", rec.Code)
-		}
+	// /bff/session read the session...
+	sess, ok := h.srv.store.Get(cookie.Value)
+	if !ok {
+		t.Fatal("no session after login")
 	}
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	if store.puts != putsAfterLogin {
-		t.Fatalf("/bff/session used Put (upsert) %d times; must use Touch", store.puts-putsAfterLogin)
-	}
-	if store.touches < 3 {
-		t.Fatalf("touches = %d, want >= 3", store.touches)
-	}
-}
-
-func TestMemoryTouchDoesNotResurrectDeletedSession(t *testing.T) {
-	store := NewMemorySessionStore(30*time.Minute, 8*time.Hour)
-	sess := bff.NewSession("sid", "csrf", nil, bff.UserInfo{Sub: "u1"}, time.Now())
-	store.Put(sess)
-	store.Delete("sid")
+	// ...a logout deleted it...
+	h.srv.store.Delete(cookie.Value)
+	// ...then /bff/session slid the window and wrote it back.
 	sess.Touch(time.Now())
-	store.Touch(sess)
-	if _, ok := store.Get("sid"); ok {
-		t.Fatal("Touch re-created a deleted session")
+	h.srv.writeBack(sess)
+
+	if _, ok := h.srv.store.Get(cookie.Value); ok {
+		t.Fatal("the write-back re-created a deleted session")
+	}
+	if rec := h.do(http.MethodGet, "/api/admin/x", cookie); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("deleted session still proxies: %d", rec.Code)
+	}
+}
+
+// The slide still reaches a store that rehydrates per Get (Postgres-like):
+// there the write-back must Put, or the idle window would never move.
+func TestSessionEndpointWritesBackToARehydratingStore(t *testing.T) {
+	spy := &putSpyStore{SessionStore: newSnapshotSessionStore()}
+	h := newPhase2HarnessWithStores(t, &stores{sessions: spy})
+	cookie, _ := h.login(t)
+
+	spy.mu.Lock()
+	before := spy.puts
+	spy.mu.Unlock()
+	if rec := h.do(http.MethodGet, "/bff/session", cookie); rec.Code != http.StatusOK {
+		t.Fatalf("session = %d", rec.Code)
+	}
+	spy.mu.Lock()
+	defer spy.mu.Unlock()
+	if spy.puts != before+1 {
+		t.Fatalf("/bff/session wrote back %d times, want 1", spy.puts-before)
 	}
 }
 
 // ── P3-28: a failed server-side delete is not reported as a clean logout ─────
 
+// failingDeleteStore stands in for bff.PostgresStore when its Delete
+// statement fails: the store's error handler is told (here: the stores'
+// counter, as openPostgresStores wires it) and Delete returns nothing.
 type failingDeleteStore struct {
-	*MemorySessionStore
+	*bff.MemoryStore
+	st *stores
 }
 
-func (s *failingDeleteStore) DeleteSession(string) error {
-	return errFailedDelete
+func (s *failingDeleteStore) Delete(string) {
+	s.st.sessionErrors.Add(1) // what the error handler does on a failed statement
 }
-
-var errFailedDelete = &storeError{"connection refused"}
-
-type storeError struct{ msg string }
-
-func (e *storeError) Error() string { return e.msg }
 
 func TestLogoutSurfacesDeleteFailure(t *testing.T) {
-	store := &failingDeleteStore{MemorySessionStore: NewMemorySessionStore(30*time.Minute, 8*time.Hour)}
-	h := newPhase2HarnessWithStore(t, store)
+	st := &stores{}
+	st.sessions = &failingDeleteStore{MemoryStore: bff.NewMemoryStore(30*time.Minute, 8*time.Hour), st: st}
+	h := newPhase2HarnessWithStores(t, st)
 	cookie, csrf := h.login(t)
 
 	rec := h.post("/bff/logout", cookie, csrf, "")
@@ -235,7 +236,32 @@ func TestLogoutSurfacesDeleteFailure(t *testing.T) {
 	if c := sessionCookie(rec); c != nil {
 		t.Fatalf("session cookie re-issued on failed logout")
 	}
+	cleared := false
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "mon_session" && c.MaxAge < 0 {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Fatal("the session cookie must be cleared even when the delete failed")
+	}
 	if len(h.revoked) == 0 {
 		t.Fatal("tokens not revoked before the delete")
+	}
+}
+
+// A clean logout on the in-memory store: 204, the session is gone for good.
+func TestLogoutDeletesTheMemorySession(t *testing.T) {
+	h := newPhase2Harness(t)
+	cookie, csrf := h.login(t)
+
+	if rec := h.post("/bff/logout", cookie, csrf, ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("logout = %d, want 204", rec.Code)
+	}
+	if _, ok := h.srv.store.Get(cookie.Value); ok {
+		t.Fatal("session still in the store after logout")
+	}
+	if rec := h.do(http.MethodGet, "/api/admin/x", cookie); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("logged-out session still proxies: %d", rec.Code)
 	}
 }

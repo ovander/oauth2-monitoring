@@ -32,19 +32,24 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Durable session store when a DSN is configured; in-memory otherwise.
-	var store SessionStore
-	if cfg.AuthEnabled() && cfg.SessionDSN != "" {
-		ps, err := NewPostgresSessionStore(ctx, cfg.SessionDSN, cfg.SessionIdle, cfg.SessionAbsolute)
+	// Sessions and pending logins: Postgres when BFF_SESSION_DSN is set,
+	// memory otherwise. A store that cannot be opened (database unreachable,
+	// managed tables missing or not granted) stops the start-up: fail closed.
+	var st *stores
+	if cfg.AuthEnabled() {
+		openCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		st, err = openStores(openCtx, cfg)
+		cancel()
 		if err != nil {
-			log.Fatalf("bff: postgres session store: %v", err)
+			log.Fatalf("bff: session store: %v", err)
 		}
-		defer ps.Close()
-		store = ps
-		log.Printf("bff: using Postgres session store")
+		defer func() { _ = st.Close() }()
+		if cfg.SessionDSN != "" {
+			log.Printf("bff: using the Postgres session store (schema: %s)", cfg.SessionSchema)
+		}
 	}
 
-	srv := NewServerWithStore(cfg, store)
+	srv := NewServerWithStores(cfg, st)
 	srv.StartSweeper(ctx)
 
 	httpServer := &http.Server{
