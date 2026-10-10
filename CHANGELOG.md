@@ -6,6 +6,14 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-10-10
+
+Security patch: the BFF is built with Go 1.27.2, which fixes eight standard-library
+vulnerabilities (`net/http`, HTTP/2), and sign-in with the Postgres session store
+(`BFF_SESSION_DSN`) works again. **Deploy notes:** rebuild and redeploy; no BFF environment
+variable, Caddy or CSP change. With `BFF_SESSION_DSN`, the BFF adds a column to its login-state
+table at start-up.
+
 ### Security
 - **The BFF is built with Go 1.27.2** (`go 1.27.2` in `bff/go.mod`, `golang:1.27.2-alpine`). Go 1.27.2
   fixes eight standard-library vulnerabilities, in `net/http` and its HTTP/2 implementation among
@@ -183,7 +191,8 @@ the badge).
 
 Changes before this changelog was introduced are in the git history.
 
-[Unreleased]: https://github.com/ovander/oauth2-monitoring/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/ovander/oauth2-monitoring/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/ovander/oauth2-monitoring/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/ovander/oauth2-monitoring/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/ovander/oauth2-monitoring/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/ovander/oauth2-monitoring/compare/v1.0.0...v1.0.1

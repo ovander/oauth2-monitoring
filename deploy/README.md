@@ -191,10 +191,10 @@ The shipped Socrate version is written to `deploy/_artifacts/SOCRATE_VERSION`.
 
 ```bash
 git fetch --tags && git -C ../go-oauth2 fetch --tags
-VPS_HOST=deploy@host.example.com SOCRATE_REF=v1.12.1 ./deploy/scripts/push.sh v1.1.1
+VPS_HOST=deploy@host.example.com SOCRATE_REF=v1.13.1 ./deploy/scripts/push.sh v1.1.2
 
 # Build only, without shipping:
-SOCRATE_REF=v1.12.1 ./deploy/scripts/build.sh v1.1.1
+SOCRATE_REF=v1.13.1 ./deploy/scripts/build.sh v1.1.2
 ```
 
 Enable the services on the first deploy:
