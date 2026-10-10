@@ -18,6 +18,15 @@ plaintext refresh tokens. Sessions are not migrated: everyone is signed out once
 `BFF_SESSION_DSN`, nothing to do. No Caddy or CSP change; no order with the Socrate server. See
 [`deploy/README.md`](deploy/README.md#upgrade-notes).
 
+### Added
+- **`BFF_SESSION_KEY`**: the 32-byte key, in standard base64, that encrypts the Postgres rows.
+  Required with `BFF_SESSION_DSN`; a missing or invalid key refuses to start. Never logged.
+- **`BFF_SESSION_SCHEMA`**: `managed` (default) or `auto`. Managed: the tables come from the new
+  `deploy/sql/bff-session-store.sql` and the BFF only checks at start-up that they exist with
+  their columns and the role's grants, so its role needs no DDL right. Auto: the BFF creates them,
+  as before. Any other value refuses to start. A CI test applies the SQL file to a fresh schema
+  and opens both stores on it, as the owner and as a role holding only the file's `GRANT`.
+
 ### Changed
 - **Sessions and pending logins use backendkit's stores** (`bff/stores.go`, backendkit v1.21.0 →
   v1.25.0). In memory: `bff.MemoryStore` and the bounded `bff.MemoryPendingLoginStore`. With
@@ -29,15 +38,6 @@ plaintext refresh tokens. Sessions are not migrated: everyone is signed out once
   login cannot be stored: the in-memory store holds its maximum of 10,000 logins in flight, or
   the database is unavailable. A callback is still accepted once per state, from the browser
   that started the login, and refused on any doubt.
-
-### Added
-- **`BFF_SESSION_KEY`**: the 32-byte key, in standard base64, that encrypts the Postgres rows.
-  Required with `BFF_SESSION_DSN`; a missing or invalid key refuses to start. Never logged.
-- **`BFF_SESSION_SCHEMA`**: `managed` (default) or `auto`. Managed: the tables come from the new
-  `deploy/sql/bff-session-store.sql` and the BFF only checks at start-up that they exist with
-  their columns and the role's grants, so its role needs no DDL right. Auto: the BFF creates them,
-  as before. Any other value refuses to start. A CI test applies the SQL file to a fresh schema
-  and opens both stores on it, as the owner and as a role holding only the file's `GRANT`.
 
 ### Security
 - **Tokens at rest are encrypted.** With `BFF_SESSION_DSN`, session rows (access and refresh
