@@ -195,7 +195,7 @@ Details: [`bff/README.md`](bff/README.md) and [`deploy/README.md`](deploy/README
 ### Prerequisites
 
 - **Node.js 24** (the version in `.nvmrc`, which CI uses) and npm.
-- **Go**: the `toolchain` line in `bff/go.mod` (currently go1.27.1); the `go` command downloads
+- **Go**: the `toolchain` line in `bff/go.mod` (currently go1.27.2); the `go` command downloads
   it automatically if needed.
 - **A reachable Socrate server** (OAuth server and admin API) with a **confidential OAuth
   client** registered for this console. For local development, register the redirect URI
