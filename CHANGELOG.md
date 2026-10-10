@@ -6,6 +6,12 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+### Security
+- **The BFF is built with Go 1.27.2** (`go 1.27.2` in `bff/go.mod`, `golang:1.27.2-alpine`). Go 1.27.2
+  fixes eight standard-library vulnerabilities, in `net/http` and its HTTP/2 implementation among
+  them (e.g. GO-2026-6603, GO-2026-6605). The BFF binary links the standard library, so one built
+  with 1.27.1 carries them: rebuild and redeploy. No code change.
+
 ### Fixed
 - **Sign-in with the Postgres session store (`BFF_SESSION_DSN`) failed every time.** The login
   state table had no column for the `LoginBinding` nonce, so the callback read back an empty nonce,
