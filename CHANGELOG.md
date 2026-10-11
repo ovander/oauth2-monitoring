@@ -7,6 +7,15 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 ## [Unreleased]
 
 ### Changed
+- BFF: backendkit v1.25.0 → v1.27.0. Its in-memory session store now keeps a logout tombstone
+  (backendkit v1.26.1), as the Postgres store always has, so the BFF's own workaround is gone:
+  `/bff/session` and `/bff/elevate` write the session back through the store on both backends,
+  and a request racing a logout still cannot bring the session back (P3-29). The managed-schema
+  check for the pending-login table now also requires `UPDATE` (backendkit v1.26.0), which
+  `deploy/sql/bff-session-store.sql` already grants. No BFF environment variable, Caddy or CSP
+  change.
+
+### Changed
 - **Documentation matches the code**: the release kit of the Socrate server repository
   (`deploy/release-kit`) and its admin-API port `8082` are described next to this repository's
   kit; the Go version is read from `bff/go.mod`'s `go` line (it has no `toolchain` line); the

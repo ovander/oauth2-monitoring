@@ -3,9 +3,7 @@
 -- Needed only with BFF_SESSION_DSN set and BFF_SESSION_SCHEMA=managed (the
 -- default). The BFF then runs no DDL: at start-up it checks that these tables
 -- have the expected columns and that its role holds SELECT, INSERT, UPDATE and
--- DELETE on the session table and SELECT, INSERT and DELETE on the
--- pending-login table, and refuses to start otherwise (grant UPDATE on both,
--- see the GRANT below).
+-- DELETE on both tables, and refuses to start otherwise (see the GRANT below).
 --
 -- The statements are those backendkit (github.com/ovander/backendkit, bff
 -- package) documents for its managed schema (WithPostgresManagedSchema,
@@ -45,8 +43,8 @@ CREATE TABLE bff_store_pending_logins (
 
 -- When the BFF connects as a role that does not own the tables, grant it
 -- exactly what it uses (replace <bff_role>). UPDATE on the pending-login table
--- is needed too: its INSERT … ON CONFLICT DO UPDATE requires it, even though
--- the start-up check only asks for SELECT, INSERT and DELETE there.
+-- is needed too: its INSERT … ON CONFLICT DO UPDATE requires it (the start-up
+-- check asks for it since backendkit v1.26.0).
 -- GRANT SELECT, INSERT, UPDATE, DELETE ON bff_store_sessions, bff_store_pending_logins TO <bff_role>;
 
 COMMIT;
