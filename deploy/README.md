@@ -198,10 +198,10 @@ The shipped Socrate version is written to `deploy/_artifacts/SOCRATE_VERSION`.
 
 ```bash
 git fetch --tags && git -C ../go-oauth2 fetch --tags
-VPS_HOST=deploy@host.example.com SOCRATE_REF=v1.14.0 ./deploy/scripts/push.sh v1.2.0
+VPS_HOST=deploy@host.example.com SOCRATE_REF=v1.14.2 ./deploy/scripts/push.sh v1.2.1
 
 # Build only, without shipping:
-SOCRATE_REF=v1.14.0 ./deploy/scripts/build.sh v1.2.0
+SOCRATE_REF=v1.14.2 ./deploy/scripts/build.sh v1.2.1
 ```
 
 Enable the services on the first deploy:
@@ -219,7 +219,7 @@ console together from one set of tags to the next. From a folder holding the thr
 (`go-oauth2`, `oauth2-admin`, `oauth2-monitoring`):
 
 ```bash
-bash go-oauth2/deploy/release-kit/socrate-release.sh v1.14.0 v1.7.0 v1.2.0   # <socrate> <admin> <monitoring>
+bash go-oauth2/deploy/release-kit/socrate-release.sh v1.14.2 v1.7.1 v1.2.1   # <socrate> <admin> <monitoring>
 ```
 
 It builds each tag in a throwaway worktree into one checksummed bundle, which carries this
