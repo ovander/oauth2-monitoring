@@ -99,7 +99,7 @@ Rendered from the production build with sample data.
 | Logging | loglevel 1.9 (levels are not persisted) |
 | Build | Vite 7, vue-tsc 3 |
 | Tests | Vitest 4, @vue/test-utils 2, jsdom |
-| Backend-for-Frontend | Go 1.27.2 (the `go` line in `bff/go.mod`), `ovander/backendkit` v1.25 (`bff` package: gateway, session and pending-login stores), pgx v5 (`database/sql` driver) for the optional Postgres stores |
+| Backend-for-Frontend | Go 1.27.2 (the `go` line in `bff/go.mod`), `ovander/backendkit` v1.27 (`bff` package: gateway, session and pending-login stores), pgx v5 (`database/sql` driver) for the optional Postgres stores |
 
 ---
 

@@ -225,18 +225,10 @@ func (s *Server) currentSession(_ http.ResponseWriter, r *http.Request) *bff.Ses
 // step-up token) without ever re-creating one that a racing logout deleted
 // (P3-29): a /bff/session that read the session just before the logout's
 // Delete must not put it straight back, with tokens that were just revoked.
-//
-//   - bff.MemoryStore hands out the very *Session it holds, so the change is
-//     already in the store. Its Put is an unconditional insert, so it is
-//     skipped: it could only re-insert a deleted session.
-//   - bff.PostgresStore rehydrates a fresh *Session per Get, so the change
-//     must be written. Its Put never re-creates a deleted session: Delete
-//     leaves a tombstone (bff.PostgresStoreTombstoneTTL) and the upsert only
-//     updates rows that are not tombstoned.
+// Both backendkit stores guarantee it (v1.26.1 and later for MemoryStore):
+// Delete leaves a tombstone for bff.PostgresStoreTombstoneTTL and Put never
+// revives a tombstoned session.
 func (s *Server) writeBack(sess *bff.Session) {
-	if _, inMemory := s.store.(*bff.MemoryStore); inMemory {
-		return
-	}
 	s.store.Put(sess)
 }
 
