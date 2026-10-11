@@ -9,9 +9,9 @@ Contributions are accepted under the project's licence, [Apache-2.0](LICENSE).
 
 ## Development setup
 
-Requirements: Node.js 24 (the version in `.nvmrc`, which CI uses), and Go for the BFF (the
-`toolchain` line in `bff/go.mod` downloads the exact version, 1.27.2). Signing in needs a running
-Socrate server with a confidential OAuth client registered for the console (redirect URI
+Requirements: Node.js 24 (the version in `.nvmrc`, which CI uses), and Go for the BFF (the `go`
+line in `bff/go.mod`, 1.27.2, which `GOTOOLCHAIN=auto` downloads if needed). Signing in needs a
+running Socrate server with a confidential OAuth client registered for the console (redirect URI
 `http://localhost:5180/bff/callback` for local work).
 
 ```bash
@@ -78,8 +78,9 @@ npm run build                            # vue-tsc type check + production build
 
 The maintainer tags releases `vX.Y.Z` on `main`, moving the `[Unreleased]` changelog section
 under the new version, and deploys them with the kit in `deploy/` (see
-[`deploy/README.md`](deploy/README.md)): artifacts are built locally, pinned to the tag, and
-shipped to the host, so no build toolchain runs in production.
+[`deploy/README.md`](deploy/README.md)) or, with Socrate and the admin console, with the Socrate
+server's release kit (`deploy/release-kit` in `ovander/go-oauth2`): either way artifacts are built
+locally, pinned to the tags, and shipped to the host, so no build toolchain runs in production.
 
 ## Security
 

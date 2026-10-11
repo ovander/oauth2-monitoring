@@ -211,6 +211,28 @@ sudo systemctl enable --now socrate socrate-monitoring-bff
 sudo systemctl reload caddy
 ```
 
+## Release kit (suite upgrades)
+
+The owner's production host is upgraded with the release kit of the Socrate server repository
+(`deploy/release-kit/` in `ovander/go-oauth2`), which moves Socrate, the admin console and this
+console together from one set of tags to the next. From a folder holding the three clones
+(`go-oauth2`, `oauth2-admin`, `oauth2-monitoring`):
+
+```bash
+bash go-oauth2/deploy/release-kit/socrate-release.sh v1.14.0 v1.7.0 v1.2.0   # <socrate> <admin> <monitoring>
+```
+
+It builds each tag in a throwaway worktree into one checksummed bundle, which carries this
+repository's SPA (`www/monitoring/dist`), BFF binary (`bin/socrate-monitoring-bff`) and
+`systemd/socrate-monitoring-bff.service`, plus a generated runbook. On the host,
+`socrate-vps-install.sh` installs it and `socrate-caddy-update.sh` updates the console Caddy
+sites; the kit's own README is the reference. That installer expects the admin API on
+`127.0.0.1:8082` (and the admin BFF on `8092`), not the `8081` of this kit, so on such a host
+`bff.env` sets `BFF_ADMIN_UPSTREAM=http://127.0.0.1:8082`.
+
+This directory's `push.sh`/`build.sh` remain the way to install and deploy a host with this kit's
+layout.
+
 ## Upgrade notes
 
 ### BFF session store: backendkit's encrypted stores (v1.2.0)

@@ -30,6 +30,10 @@ Browser ──HTTPS──► Caddy (monitor.example.com)
   (`BFF_OAUTH_UPSTREAM`) for the code exchange, refresh and revocation, and forwards the public
   `GET /api/version` probe to it.
 - The admin API (`:8081`) has no public host name; only the console BFFs reach it, over loopback.
+  `8081` is the default (`BFF_ADMIN_UPSTREAM`, and Socrate's `ADMIN_PORT` in
+  [`deploy/env/socrate.env.example`](../deploy/env/socrate.env.example)); on a host installed by
+  the Socrate release kit the admin API is on `127.0.0.1:8082`, so set
+  `BFF_ADMIN_UPSTREAM=http://127.0.0.1:8082` there.
 - The BFF binds `127.0.0.1` by default, so it is reachable only through Caddy.
 
 ## Configuration
