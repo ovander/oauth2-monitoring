@@ -6,7 +6,9 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
-The BFF keeps its sessions and pending logins in backendkit's stores (backendkit v1.25.0) instead
+## [1.2.0] - 2026-10-11
+
+Minor release. The BFF keeps its sessions and pending logins in backendkit's stores (backendkit v1.25.0) instead
 of its own: with `BFF_SESSION_DSN` the rows are now encrypted (AES-256-GCM), a logout can no
 longer be undone by a racing request, and the BFF runs no DDL by default.
 
@@ -235,7 +237,8 @@ the badge).
 
 Changes before this changelog was introduced are in the git history.
 
-[Unreleased]: https://github.com/ovander/oauth2-monitoring/compare/v1.1.2...HEAD
+[Unreleased]: https://github.com/ovander/oauth2-monitoring/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/ovander/oauth2-monitoring/compare/v1.1.2...v1.2.0
 [1.1.2]: https://github.com/ovander/oauth2-monitoring/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/ovander/oauth2-monitoring/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/ovander/oauth2-monitoring/compare/v1.0.1...v1.1.0

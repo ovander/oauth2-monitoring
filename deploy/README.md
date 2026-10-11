@@ -198,10 +198,10 @@ The shipped Socrate version is written to `deploy/_artifacts/SOCRATE_VERSION`.
 
 ```bash
 git fetch --tags && git -C ../go-oauth2 fetch --tags
-VPS_HOST=deploy@host.example.com SOCRATE_REF=v1.13.1 ./deploy/scripts/push.sh v1.1.2
+VPS_HOST=deploy@host.example.com SOCRATE_REF=v1.14.0 ./deploy/scripts/push.sh v1.2.0
 
 # Build only, without shipping:
-SOCRATE_REF=v1.13.1 ./deploy/scripts/build.sh v1.1.2
+SOCRATE_REF=v1.14.0 ./deploy/scripts/build.sh v1.2.0
 ```
 
 Enable the services on the first deploy:
@@ -213,7 +213,7 @@ sudo systemctl reload caddy
 
 ## Upgrade notes
 
-### BFF session store: backendkit's encrypted stores (after v1.1.2)
+### BFF session store: backendkit's encrypted stores (v1.2.0)
 
 Only with `BFF_SESSION_DSN` set; with the in-memory store there is nothing to do. The BFF now
 keeps sessions and pending logins in backendkit's stores, in two new tables
