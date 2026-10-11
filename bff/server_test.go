@@ -76,7 +76,7 @@ func TestNonAllowlistedPathIs404(t *testing.T) {
 // read and mutate the same record concurrently. Guarded by the per-session mutex
 // this must be race-free (run with -race).
 func TestSessionConcurrentGetAndMutate(t *testing.T) {
-	store := NewMemorySessionStore(time.Hour, time.Hour)
+	store := bff.NewMemoryStore(time.Hour, time.Hour)
 	now := time.Now()
 	ts := &socrate.TokenSet{AccessToken: "a", RefreshToken: "r", ExpiresIn: 3600}
 	store.Put(bff.NewSession("s1", "c", ts, bff.UserInfo{}, now))

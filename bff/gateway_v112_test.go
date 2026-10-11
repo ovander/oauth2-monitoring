@@ -17,22 +17,20 @@ func expiredTokens() *socrate.TokenSet {
 	return &socrate.TokenSet{AccessToken: "expired-at", RefreshToken: "rt-1", ExpiresIn: 1}
 }
 
-// snapshotSessionStore has the same semantics as PostgresSessionStore — every
+// snapshotSessionStore has the same semantics as bff.PostgresStore — every
 // Get rehydrates a fresh *bff.Session from a stored snapshot, so state that is
-// not written back with Put is lost — without needing a database. Login state
-// is delegated to the in-memory store.
+// not written back with Put is lost — without needing a database. Pending
+// logins stay in the harness's default in-memory store.
 type snapshotSessionStore struct {
-	*MemorySessionStore
 	mu   sync.Mutex
 	rows map[string]bff.SessionSnapshot
 }
 
 func newSnapshotSessionStore() *snapshotSessionStore {
-	return &snapshotSessionStore{
-		MemorySessionStore: NewMemorySessionStore(time.Hour, time.Hour),
-		rows:               map[string]bff.SessionSnapshot{},
-	}
+	return &snapshotSessionStore{rows: map[string]bff.SessionSnapshot{}}
 }
+
+func (s *snapshotSessionStore) Sweep() {}
 
 func (s *snapshotSessionStore) Get(id string) (*bff.Session, bool) {
 	s.mu.Lock()
@@ -71,7 +69,7 @@ func (s *snapshotSessionStore) row(id string) (bff.SessionSnapshot, bool) {
 // deleted.
 func TestDurableStore_RefreshedTokensSurviveAcrossRequests(t *testing.T) {
 	store := newSnapshotSessionStore()
-	h := newPhase2HarnessWithStore(t, store)
+	h := newPhase2HarnessWithStores(t, &stores{sessions: store})
 	h.expiresIn = 0 // every access token is born expired → refresh on first use
 
 	cookie, _ := h.login(t)

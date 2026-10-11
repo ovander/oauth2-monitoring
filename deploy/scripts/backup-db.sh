@@ -23,12 +23,17 @@ echo "▶ dumping '$DB' → $out"
 # -Fc would be smaller/parallel-restorable; plain SQL + gzip is the simplest
 # portable format and restores with `gunzip -c … | psql`.
 #
-# P3-30: the monitoring BFF's Postgres session store (BFF_SESSION_DSN) keeps
-# live OAuth access/refresh tokens in bff_sessions.data, unencrypted. They are
+# P3-30: the monitoring BFF's Postgres stores (BFF_SESSION_DSN) keep sessions,
+# OAuth tokens included, and pending logins: encrypted in bff_store_sessions and
+# bff_store_pending_logins, and in PLAINTEXT in the former bff_sessions and
+# bff_login_states (up to v1.1.2, dropped after the upgrade). They are
 # short-lived operational state, not data worth restoring, and a dump that
-# carried them would be a credential file. Keep the schema, drop the rows.
+# carried them would be a credential file (or, for the encrypted tables, one
+# key away from it). Keep the schema, drop the rows.
 # (The table names are harmless if the BFF uses a different database.)
 pg_dump "$DB" \
+  --exclude-table-data=bff_store_sessions \
+  --exclude-table-data=bff_store_pending_logins \
   --exclude-table-data=bff_sessions \
   --exclude-table-data=bff_login_states \
   | gzip -c > "$out"

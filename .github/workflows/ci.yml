@@ -18,8 +18,11 @@ jobs:
   bff-tests:
     name: BFF tests (Go)
     runs-on: ubuntu-latest
-    # A scratch Postgres so the PostgresSessionStore tests run instead of
-    # skipping: the durable store (BFF_SESSION_DSN) is otherwise untested.
+    # A scratch Postgres so the Postgres store tests (bff/stores_db_test.go)
+    # run instead of skipping: the durable stores (BFF_SESSION_DSN), and
+    # deploy/sql/bff-session-store.sql against backendkit's managed-schema
+    # check, are otherwise untested. The superuser role lets the tests create
+    # throwaway schemas and a non-owner role.
     services:
       postgres:
         image: postgres:16-alpine

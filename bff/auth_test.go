@@ -51,13 +51,13 @@ type phase2Harness struct {
 
 func newPhase2Harness(t *testing.T) *phase2Harness {
 	t.Helper()
-	return newPhase2HarnessWithStore(t, nil)
+	return newPhase2HarnessWithStores(t, nil)
 }
 
-// newPhase2HarnessWithStore builds the harness around an injected SessionStore
-// (nil → the default in-memory store), so tests can exercise a durable store's
-// rehydrate-per-Get semantics through the real handlers.
-func newPhase2HarnessWithStore(t *testing.T, store SessionStore) *phase2Harness {
+// newPhase2HarnessWithStores builds the harness around injected stores (nil,
+// or a nil field → the default in-memory store), so tests can exercise a
+// durable store's rehydrate-per-Get semantics through the real handlers.
+func newPhase2HarnessWithStores(t *testing.T, st *stores) *phase2Harness {
 	t.Helper()
 	h := &phase2Harness{
 		accessToken:   makeJWT(map[string]any{"sub": "u1", "email": "a@b.c", "name": "Admin A"}),
@@ -138,7 +138,7 @@ func newPhase2HarnessWithStore(t *testing.T, store SessionStore) *phase2Harness 
 	}
 	ou, _ := url.Parse(cfg.OAuthUpstream)
 	cfg.oauthURL = ou
-	h.srv = NewServerWithStore(cfg, store)
+	h.srv = NewServerWithStores(cfg, st)
 	return h
 }
 

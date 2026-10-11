@@ -183,6 +183,10 @@ Each phase is independently shippable and reversible behind config.
    is an internal upstream on `127.0.0.1:8090`, reached only via Caddy.
 2. **Session store:** ✅ **Reuse the existing Postgres** (single VPS → no HA need
    yet; Redis remains a drop-in upgrade for multi-instance).
+   *Update (2026-10):* the BFF now uses backendkit's stores (`bff.PostgresStore`
+   and `bff.PostgresPendingLoginStore`, in the BFF's own database): rows are
+   encrypted with AES-256-GCM under `BFF_SESSION_KEY`, as §4 "At rest" asks, and
+   the tables come from `deploy/sql/bff-session-store.sql` (managed schema).
 3. **Repo placement:** ✅ **`bff/` in `oauth2-monitoring`** — versioned with the SPA
    it serves (this PR).
 4. **Timeouts:** proposed **30 min idle / 8 h absolute** for the SOC console

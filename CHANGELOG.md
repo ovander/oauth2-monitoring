@@ -6,6 +6,50 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+The BFF keeps its sessions and pending logins in backendkit's stores (backendkit v1.25.0) instead
+of its own: with `BFF_SESSION_DSN` the rows are now encrypted (AES-256-GCM), a logout can no
+longer be undone by a racing request, and the BFF runs no DDL by default.
+
+**Deploy note:** with `BFF_SESSION_DSN` set, before starting the new BFF: set `BFF_SESSION_KEY`
+(`openssl rand -base64 32`) in `/etc/socrate/bff.env`, and run `deploy/sql/bff-session-store.sql`
+as the owner of the tables (the `socrate_bff` role); the BFF refuses to start without either.
+Then drop the old tables (`DROP TABLE IF EXISTS bff_sessions, bff_login_states;`), which may hold
+plaintext refresh tokens. Sessions are not migrated: everyone is signed out once. Without
+`BFF_SESSION_DSN`, nothing to do. No Caddy or CSP change; no order with the Socrate server. See
+[`deploy/README.md`](deploy/README.md#upgrade-notes).
+
+### Added
+- **`BFF_SESSION_KEY`**: the 32-byte key, in standard base64, that encrypts the Postgres rows.
+  Required with `BFF_SESSION_DSN`; a missing or invalid key refuses to start. Never logged.
+- **`BFF_SESSION_SCHEMA`**: `managed` (default) or `auto`. Managed: the tables come from the new
+  `deploy/sql/bff-session-store.sql` and the BFF only checks at start-up that they exist with
+  their columns and the role's grants, so its role needs no DDL right. Auto: the BFF creates them,
+  as before. Any other value refuses to start. A CI test applies the SQL file to a fresh schema
+  and opens both stores on it, as the owner and as a role holding only the file's `GRANT`.
+
+### Changed
+- **Sessions and pending logins use backendkit's stores** (`bff/stores.go`, backendkit v1.21.0 →
+  v1.25.0). In memory: `bff.MemoryStore` and the bounded `bff.MemoryPendingLoginStore`. With
+  `BFF_SESSION_DSN`: `bff.PostgresStore` and `bff.PostgresPendingLoginStore` on one
+  `database/sql` pool (pgx's driver), in the new tables `bff_store_sessions` and
+  `bff_store_pending_logins`. The BFF's own stores (`session.go`, `session_postgres.go`) and
+  their tables `bff_sessions` and `bff_login_states` are gone; the sweeper prunes both new stores.
+- **`/bff/login` answers `503`** (with `Retry-After`, and no redirect to Socrate) when the pending
+  login cannot be stored: the in-memory store holds its maximum of 10,000 logins in flight, or
+  the database is unavailable. A callback is still accepted once per state, from the browser
+  that started the login, and refused on any doubt.
+
+### Security
+- **Tokens at rest are encrypted.** With `BFF_SESSION_DSN`, session rows (access and refresh
+  tokens included) and pending logins (PKCE verifier) are encrypted with AES-256-GCM under
+  `BFF_SESSION_KEY`, bound to their id; they were plaintext jsonb. `backup-db.sh` also leaves the
+  new tables' rows out of dumps.
+- **A logout cannot be undone by a racing request** (P3-29). The Postgres store's delete keeps a
+  tombstone for an hour that its writes never revive; on the in-memory store, a session is
+  updated in place and never re-inserted by `/bff/session` or `/bff/elevate`. A failed delete
+  still answers `500 logout_incomplete` (P3-28): logout counts the store's failed statements
+  around the delete.
+
 ## [1.1.2] - 2026-10-10
 
 Security patch: the BFF is built with Go 1.27.2, which fixes eight standard-library

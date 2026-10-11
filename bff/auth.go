@@ -26,12 +26,21 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// the nonce cookie issued here, so a captured callback URL cannot log a
 	// different browser into the attacker's session.
 	nonce := s.login.Begin(w)
-	s.store.PutLogin(state, loginState{
+	if err := s.stores.pending.Put(r.Context(), state, bff.PendingLogin{
 		Verifier: verifier,
 		ReturnTo: bff.SanitizeReturnTo(r.URL.Query().Get("return_to")),
 		Nonce:    nonce,
 		Created:  time.Now(),
-	})
+	}); err != nil {
+		// The store is full (bff.ErrPendingLoginsFull) or unreachable. Without
+		// a stored state the callback could only be refused, so do not send
+		// the browser to Socrate at all.
+		log.Printf("bff: login: cannot store the pending login: %v", err)
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Retry-After", "60")
+		http.Error(w, "sign-in is temporarily unavailable, please try again in a minute", http.StatusServiceUnavailable)
+		return
+	}
 	http.Redirect(w, r, s.oauth.authorizeURL(state, bff.S256Challenge(verifier)), http.StatusFound)
 }
 
@@ -44,7 +53,9 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state, code := q.Get("state"), q.Get("code")
-	ls, ok := s.store.TakeLogin(state) // single-use: the callback is single-shot
+	// Single-use: Take removes the state, so a callback is accepted once. An
+	// unknown, expired or unreadable state, or a store error, refuses it.
+	ls, ok := s.stores.pending.Take(r.Context(), state)
 	if !ok || code == "" {
 		http.Error(w, "invalid or expired login state", http.StatusBadRequest)
 		return
@@ -223,6 +234,6 @@ func (s *Server) handleElevate(w http.ResponseWriter, r *http.Request) {
 		ExpiresIn:    lr.ExpiresIn,
 	}
 	sess.SetTokens(ts, time.Now())
-	s.store.Put(sess)
+	s.writeBack(sess)
 	w.WriteHeader(http.StatusNoContent)
 }

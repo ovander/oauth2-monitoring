@@ -11,8 +11,8 @@ of that loopback-only API for this console. The rationale is recorded in
 comes from the `bff` package of [`ovander/backendkit`](https://github.com/ovander/backendkit).
 
 A request without a valid session gets `401`; an unsafe method without the session's
-`X-CSRF-Token` gets `403`. Sessions are in memory by default, or in Postgres with
-`BFF_SESSION_DSN`.
+`X-CSRF-Token` gets `403`. Sessions and pending logins are kept by backendkit's stores: in memory
+by default, or encrypted in Postgres with `BFF_SESSION_DSN` (see [Session storage](#session-storage)).
 
 ## Topology
 
@@ -49,7 +49,9 @@ All settings come from the environment. The production template is
 | `BFF_SCOPES` | Requested scopes, space-separated. Socrate also accepts the least-privilege `monitoring:read` and `monitoring:write`. | `openid profile email` |
 | `BFF_SESSION_IDLE` | Idle session timeout (Go duration, must be positive). | `30m` |
 | `BFF_SESSION_ABSOLUTE` | Absolute session lifetime (Go duration, must be positive). | `8h` |
-| `BFF_SESSION_DSN` | Postgres DSN for the durable session store (survives restarts, several instances). Empty uses the in-memory store (one instance). | *(empty)* |
+| `BFF_SESSION_DSN` | Postgres DSN for the durable session and pending-login stores (survive restarts, shared by several instances). Empty uses the in-memory stores (one instance). See [Session storage](#session-storage). | *(empty)* |
+| `BFF_SESSION_KEY` | AES-256-GCM key that encrypts the Postgres rows: exactly 32 bytes, standard base64 (`openssl rand -base64 32`). **Required** with `BFF_SESSION_DSN`; a missing or invalid key refuses to start. Changing it signs everyone out. Never logged. | *(empty)* |
+| `BFF_SESSION_SCHEMA` | Who creates the Postgres tables: `managed` (you run [`deploy/sql/bff-session-store.sql`](../deploy/sql/bff-session-store.sql); the BFF runs no DDL and checks the tables and grants at start-up) or `auto` (the BFF creates them, which needs `CREATE` on the schema). Anything else refuses to start. | `managed` |
 | `BFF_COOKIE_SECURE` | `Secure` attribute and `__Host-` cookie name. `false` is accepted only with an `http://` `BFF_PUBLIC_ORIGIN` (local development). | `true` |
 | `BFF_LOGIN_RATE` | Per-IP budget for `/bff/login`, in requests per minute; over budget answers `429` with `Retry-After`. A value that is not a positive integer falls back to the default. | `10` |
 | `BFF_ELEVATE_RATE` | Per-IP budget for `/bff/elevate`, in requests per minute (password and MFA guessing). Same rules as `BFF_LOGIN_RATE`. | `5` |
@@ -58,6 +60,29 @@ All settings come from the environment. The production template is
 
 Booleans accept `1/true/yes/on` and `0/false/no/off`. The BFF also refuses to start when
 `BFF_ADMIN_UPSTREAM` or `BFF_OAUTH_UPSTREAM` is not an absolute URL.
+
+### Session storage
+
+The BFF keeps two kinds of server-side state, both with the stores of backendkit's `bff`
+package (`stores.go` only wires them):
+
+- **Sessions** (tokens, CSRF token, user): `bff.MemoryStore`, or `bff.PostgresStore` with
+  `BFF_SESSION_DSN`.
+- **Pending logins** (PKCE verifier, login-binding nonce, return path, between `/bff/login` and
+  `/bff/callback`): `bff.MemoryPendingLoginStore` (at most 10,000 in flight, 10 minutes each), or
+  `bff.PostgresPendingLoginStore` on the same database. A state is accepted once.
+
+With `BFF_SESSION_DSN`, both tables hold rows encrypted with AES-256-GCM under
+`BFF_SESSION_KEY`, each bound to its session id or state, so a copy of the database hands out no
+token or PKCE verifier. The default `BFF_SESSION_SCHEMA=managed` expects the tables of
+[`deploy/sql/bff-session-store.sql`](../deploy/sql/bff-session-store.sql) (`bff_store_sessions`,
+`bff_store_pending_logins`), created by you as their owner before the BFF starts; the BFF then
+needs only `SELECT, INSERT, UPDATE, DELETE` on them (the file's commented `GRANT`). Without them,
+or without those privileges, it refuses to start. `auto` lets the BFF create the tables itself.
+
+Before backendkit v1.25.0 the BFF kept its own tables, `bff_sessions` (session data, tokens
+included, in **plaintext** jsonb) and `bff_login_states`. Nothing reads them any more: drop them
+after the upgrade (the commented `DROP TABLE` at the end of the SQL file).
 
 ### Migration-only pass-through
 
@@ -110,14 +135,20 @@ go vet ./... && go test -race ./...
 golangci-lint run ./...
 ```
 
+The Postgres store tests (`stores_db_test.go`) run only with `BFF_TEST_DATABASE_URL`, a scratch
+database whose role may create schemas and roles (CI provides one), for example
+`BFF_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/bff_test?sslmode=disable`.
+They apply `deploy/sql/bff-session-store.sql` to a fresh schema and open both stores with the
+managed schema, so the file cannot drift from what backendkit checks.
+
 ## Routes
 
 | Route | Behaviour |
 |-------|-----------|
 | `GET /bff/healthz` | Liveness probe. |
-| `GET /bff/login` | Starts Authorization Code + PKCE and binds the login to this browser with a short-lived nonce cookie. Per-IP budget. |
-| `GET /bff/callback` | Completes only for the browser that started the login; exchanges the code server-side, creates the session and sets the cookie. |
-| `GET /bff/session` | `{authenticated, user, csrf}` for the SPA bootstrap (`Cache-Control: no-store`). Slides the idle window with an update-only touch, so it never re-creates a deleted session. |
+| `GET /bff/login` | Starts Authorization Code + PKCE and binds the login to this browser with a short-lived nonce cookie. Per-IP budget. `503` with `Retry-After`, and no redirect to Socrate, when the pending login cannot be stored (memory store full, database unavailable). |
+| `GET /bff/callback` | Completes only for the browser that started the login, and only once per state; exchanges the code server-side, creates the session and sets the cookie. |
+| `GET /bff/session` | `{authenticated, user, csrf}` for the SPA bootstrap (`Cache-Control: no-store`). Slides the idle window without ever re-creating a session a racing logout deleted (the memory store is updated in place; the Postgres store's write never revives a tombstoned row). |
 | `POST /bff/logout` | Revokes the tokens at the issuer, deletes the session and clears the cookie (CSRF-protected). A failed server-side delete answers `500 logout_incomplete` rather than reporting success. |
 | `POST /bff/elevate` | Step-up: re-authenticates at Socrate with the session's token and keeps the fresh token in the session (CSRF-protected; nothing reaches the browser). Per-IP budget. |
 | `ANY /api/admin/**` | Allowlisted reverse proxy that injects the session's access token; SSE-aware. Unsafe methods need a valid `X-CSRF-Token`. |
@@ -129,8 +160,8 @@ bootstraps from `/bff/session` and signs in through `/bff/login`.
 
 ## Security notes
 
-- **Dependencies**: the `backendkit/bff` gateway and `pgx` (for the optional Postgres store),
-  nothing else.
+- **Dependencies**: the `backendkit/bff` gateway and stores, and `pgx`'s `database/sql` driver
+  (for the optional Postgres stores), nothing else.
 - **Allowlist, not an open proxy**: only `/bff/*`, `/api/admin/*` and `GET /api/version` are
   served. Requests whose path is not already canonical (`..`, `.`, `//`, or percent-encoded
   dot-segments such as `%2e%2e`) are refused outright, so the allowlist decision and the upstream's routing decision
@@ -149,12 +180,15 @@ bootstraps from `/bff/session` and signs in through `/bff/login`.
 - **Step-up errors**: `/bff/elevate` forwards the admin API's `4xx` challenge so the step-up
   dialog can prompt again, never an upstream `5xx` body, and treats a `200` without a usable
   `access_token` and `expires_in` as a failure.
-- **Tokens at rest**: with `BFF_SESSION_DSN` set, each session row's `data` column holds the
-  OAuth access **and refresh token in plaintext**. Anyone who can read the table, or a dump of
-  it, holds every active operator's session. In place: the BFF uses its own Postgres role and
-  database; `deploy/scripts/backup-db.sh` excludes the `bff_sessions` and `bff_login_states`
-  rows from dumps; sessions are short-lived and revoked at logout. Envelope encryption of the
-  `data` column is the next step if the database is shared or backed up elsewhere.
-- **Store failures**: every failed Postgres statement is logged, and the store fails closed (a
-  read error means "no session").
+- **Tokens at rest**: with `BFF_SESSION_DSN` set, session and pending-login rows are encrypted
+  with AES-256-GCM under `BFF_SESSION_KEY` (kept in `bff.env` with the other secrets, never in
+  the database), so a copy of the tables alone yields no token. The BFF also uses its own
+  Postgres role and database, and `deploy/scripts/backup-db.sh` leaves the rows of both tables
+  out of dumps.
+- **Logout cannot be undone by a racing request**: the Postgres store's delete wipes the row and
+  keeps a tombstone for an hour, and its writes never revive a tombstoned row.
+- **Store failures**: every failed Postgres statement is logged, and the stores fail closed (a
+  read error means "no session", a pending-login error refuses the sign-in). Logout counts the
+  session store's failed statements around its delete: any failure answers
+  `500 logout_incomplete`, never a false success.
 - **Not yet**: the BFF to Socrate leg is not sender-constrained (DPoP, RFC 9449).

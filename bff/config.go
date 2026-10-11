@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -50,9 +52,21 @@ type Config struct {
 	SessionIdle     time.Duration
 	SessionAbsolute time.Duration
 
-	// SessionDSN, when set, selects the Postgres-backed session store (durable /
-	// multi-instance). Empty uses the in-memory store (single instance).
+	// SessionDSN, when set, selects backendkit's Postgres session and
+	// pending-login stores (durable / multi-instance). Empty uses the in-memory
+	// stores (single instance).
 	SessionDSN string
+
+	// sessionKey (BFF_SESSION_KEY) is the 32-byte AES-256-GCM key that
+	// encrypts the Postgres session and pending-login rows. Required with
+	// SessionDSN; unexported so it is never part of a printed Config.
+	sessionKey []byte
+
+	// SessionSchema (BFF_SESSION_SCHEMA) says who creates the Postgres tables:
+	// "managed" (the default: deploy/sql/bff-session-store.sql, run by the
+	// operator; the BFF runs no DDL and checks the tables and grants at
+	// start-up) or "auto" (the BFF creates them, which needs DDL rights).
+	SessionSchema string
 
 	// Per-IP request budgets (per rateWindow) for the credential-bearing
 	// endpoints. LoginRate guards /bff/login; ElevateRate guards /bff/elevate
@@ -111,6 +125,7 @@ func LoadConfig() (*Config, error) {
 		SessionIdle:       getdur("BFF_SESSION_IDLE", 30*time.Minute),
 		SessionAbsolute:   getdur("BFF_SESSION_ABSOLUTE", 8*time.Hour),
 		SessionDSN:        getenv("BFF_SESSION_DSN", ""),
+		SessionSchema:     getenv("BFF_SESSION_SCHEMA", SessionSchemaManaged),
 		CookieSecure:      getbool("BFF_COOKIE_SECURE", true),
 		AllowPassthrough:  getbool("BFF_ALLOW_PASSTHROUGH", false),
 		Phase1Passthrough: getbool("BFF_PHASE1_PASSTHROUGH", false),
@@ -161,7 +176,47 @@ func LoadConfig() (*Config, error) {
 	if c.SessionAbsolute <= 0 {
 		return nil, fmt.Errorf("BFF_SESSION_ABSOLUTE must be positive, got %s", c.SessionAbsolute)
 	}
+	if c.SessionSchema != SessionSchemaManaged && c.SessionSchema != SessionSchemaAuto {
+		return nil, fmt.Errorf("BFF_SESSION_SCHEMA must be %q or %q, got %q", SessionSchemaManaged, SessionSchemaAuto, c.SessionSchema)
+	}
+	if c.SessionDSN != "" {
+		key, err := parseSessionKey(os.Getenv("BFF_SESSION_KEY"))
+		if err != nil {
+			return nil, err
+		}
+		c.sessionKey = key
+	}
 	return c, nil
+}
+
+// BFF_SESSION_SCHEMA values.
+const (
+	SessionSchemaManaged = "managed"
+	SessionSchemaAuto    = "auto"
+)
+
+// sessionKeyLen is the AES-256 key size backendkit's Postgres stores require.
+const sessionKeyLen = 32
+
+// parseSessionKey decodes BFF_SESSION_KEY: exactly 32 bytes in standard,
+// padded base64 (what `openssl rand -base64 32` prints). The errors never
+// echo the value.
+func parseSessionKey(v string) ([]byte, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil, errors.New("BFF_SESSION_KEY is required when BFF_SESSION_DSN is set: it encrypts the session " +
+			"rows; generate it with `openssl rand -base64 32`")
+	}
+	key, err := base64.StdEncoding.DecodeString(v)
+	if err != nil {
+		return nil, errors.New("BFF_SESSION_KEY is not valid base64 (standard alphabet, with padding); " +
+			"generate it with `openssl rand -base64 32`")
+	}
+	if len(key) != sessionKeyLen {
+		return nil, fmt.Errorf("BFF_SESSION_KEY must decode to %d bytes, got %d; generate it with `openssl rand -base64 32`",
+			sessionKeyLen, len(key))
+	}
+	return key, nil
 }
 
 // Warnings lists deliberately-unsafe settings that are legal but must be

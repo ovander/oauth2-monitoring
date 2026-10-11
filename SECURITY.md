@@ -65,6 +65,11 @@ cannot exfiltrate a replayable credential.
 - **Login bound to the browser.** `/bff/login` sets a short-lived nonce cookie stored with the
   pending state; `/bff/callback` completes only for the browser that presents it, which defeats
   login CSRF and session swapping.
+- **Pending logins** (PKCE verifier, nonce, return path) live in backendkit's pending-login
+  store, single use (a state is accepted once) and expiring after 10 minutes. The in-memory store
+  is bounded (10,000 in flight); when the store is full or unavailable, `/bff/login` answers
+  `503` and does not redirect to Socrate. An unknown, expired or unreadable state refuses the
+  callback.
 - **Token refresh** is coalesced per session, detached from the triggering request and written
   through to the session store; only a refresh the issuer rejects ends the session, while an
   outage answers a retryable 502.
@@ -82,9 +87,18 @@ cannot exfiltrate a replayable credential.
   the address Socrate audits, rate-limits or blocks it as.
 - **Logout revokes** the refresh and access tokens at the issuer (RFC 7009, best effort), then
   deletes the session and clears the cookie; a failed server-side delete answers
-  `500 logout_incomplete` rather than pretending.
+  `500 logout_incomplete` rather than pretending (the session store's failed statements are
+  counted around the delete; any failure is reported).
+- **No resurrection after logout.** A request racing a logout cannot bring the session back: the
+  in-memory session is updated in place and never re-inserted, and the Postgres store's delete
+  leaves a tombstone (one hour) that its writes never revive.
 - **Durable sessions** are optional (`BFF_SESSION_DSN`, Postgres) for restarts and several
-  instances; the default store is in memory.
+  instances; the default stores are in memory. With a DSN, session and pending-login rows are
+  encrypted with AES-256-GCM under `BFF_SESSION_KEY` (32 bytes, base64; required: the BFF refuses
+  to start without a valid key) and bound to their id, so a copy of the database yields no token
+  or PKCE verifier. By default (`BFF_SESSION_SCHEMA=managed`) the BFF runs no DDL: the tables
+  come from `deploy/sql/bff-session-store.sql`, and the BFF refuses to start unless they exist
+  with the expected columns and grants. An unknown `BFF_SESSION_SCHEMA` also refuses to start.
 
 ## SPA controls (enforced in code and tests)
 
@@ -115,6 +129,10 @@ See [`deploy/`](deploy/README.md) for the Caddy site, systemd units and scripts.
 - Caddy is the only public listener; the BFF binds `127.0.0.1:8090` and the admin API stays on
   loopback. Do not set Caddy `trusted_proxies` unless a further proxy sits in front of it.
 - The BFF runs as its own unprivileged user (`socrate-mon-bff`); its secrets
-  (`BFF_CLIENT_SECRET`, `BFF_SESSION_DSN`) live only in `/etc/socrate/bff.env`, readable by root
-  and that user.
+  (`BFF_CLIENT_SECRET`, `BFF_SESSION_DSN`, `BFF_SESSION_KEY`) live only in
+  `/etc/socrate/bff.env`, readable by root and that user.
+- With `BFF_SESSION_DSN`, the BFF connects as its own Postgres role to its own database, the
+  tables are created by `deploy/sql/bff-session-store.sql` before the BFF starts, and the role
+  needs no DDL right. The tables of the former store (up to v1.1.2: `bff_sessions` and
+  `bff_login_states`, tokens in plaintext) are dropped after the upgrade.
 - The served SPA files are root-owned and read-only to Caddy and the BFF user.
