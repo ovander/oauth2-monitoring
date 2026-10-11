@@ -6,6 +6,13 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-10-11
+
+Patch release. The BFF moves to backendkit v1.27.0, whose in-memory session store keeps a logout
+tombstone like the Postgres one, so the BFF's own workaround is gone; the documentation and env
+templates are brought up to date with the code and the suite's release kit. **Deploy notes:** no
+BFF environment variable, Caddy or CSP change; nothing to do for the session store.
+
 ### Changed
 - BFF: backendkit v1.25.0 → v1.27.0. Its in-memory session store now keeps a logout tombstone
   (backendkit v1.26.1), as the Postgres store always has, so the BFF's own workaround is gone:
@@ -14,8 +21,6 @@ All notable changes to the Socrate monitoring console are documented here. Forma
   check for the pending-login table now also requires `UPDATE` (backendkit v1.26.0), which
   `deploy/sql/bff-session-store.sql` already grants. No BFF environment variable, Caddy or CSP
   change.
-
-### Changed
 - **Documentation matches the code**: the release kit of the Socrate server repository
   (`deploy/release-kit`) and its admin-API port `8082` are described next to this repository's
   kit; the Go version is read from `bff/go.mod`'s `go` line (it has no `toolchain` line); the
@@ -255,7 +260,8 @@ the badge).
 
 Changes before this changelog was introduced are in the git history.
 
-[Unreleased]: https://github.com/ovander/oauth2-monitoring/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/ovander/oauth2-monitoring/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/ovander/oauth2-monitoring/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/ovander/oauth2-monitoring/compare/v1.1.2...v1.2.0
 [1.1.2]: https://github.com/ovander/oauth2-monitoring/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/ovander/oauth2-monitoring/compare/v1.1.0...v1.1.1
