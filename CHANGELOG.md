@@ -6,6 +6,15 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+### Changed
+- **Documentation matches the code**: the release kit of the Socrate server repository
+  (`deploy/release-kit`) and its admin-API port `8082` are described next to this repository's
+  kit; the Go version is read from `bff/go.mod`'s `go` line (it has no `toolchain` line); the
+  README lists the policy obligations, the newer event types, the Socrate versions and the current
+  tests; `bff.env.example` gains `BFF_LOGIN_RATE` and `BFF_ELEVATE_RATE`, and
+  `socrate.env.example` gains `ADMIN_SCOPE_MODE`, `DPOP_MODE` and `ADMIN_PASSWORD_LOGIN_ENABLED`
+  (commented, at their defaults). No code, Caddy or CSP change.
+
 ## [1.2.0] - 2026-10-11
 
 Minor release. The BFF keeps its sessions and pending logins in backendkit's stores (backendkit v1.25.0) instead

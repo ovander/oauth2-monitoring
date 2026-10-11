@@ -50,10 +50,14 @@ loopback-only admin API. The design is recorded in
 ## Features
 
 - **Live event stream**: a Server-Sent Events feed of sign-ins, token grants, revocations and
-  anomalies, with a live indicator and automatic reconnection.
+  anomalies, with a live indicator and automatic reconnection. Every event type Socrate emits is
+  labelled and categorised, including the custom-claim events (`custom_claim_missing`,
+  `custom_claims_dropped`), the operator-console boundary events (`admin_app_signin`,
+  `admin_api_audience`) and `scope_denied`.
 - **Threat dashboard**: at-a-glance statistics, threat level, recent events and charts.
 - **Investigation views**: events, threats, active sessions, issued tokens, reports, a
-  geographic view and the access-policy decision log.
+  geographic view and the access-policy decision log, which shows the obligations a decision
+  carried (MFA, recent sign-in) and the unmet ones behind a denial.
 - **Operator actions**: alert rules, blocked IP addresses, audit logs and settings, for admins
   only.
 - **Viewer and admin roles**: viewers get the read-only views; admin routes and destructive
@@ -95,7 +99,7 @@ Rendered from the production build with sample data.
 | Logging | loglevel 1.9 (levels are not persisted) |
 | Build | Vite 7, vue-tsc 3 |
 | Tests | Vitest 4, @vue/test-utils 2, jsdom |
-| Backend-for-Frontend | Go (toolchain in `bff/go.mod`), `ovander/backendkit` v1.25 (`bff` package: gateway, session and pending-login stores), pgx v5 (`database/sql` driver) for the optional Postgres stores |
+| Backend-for-Frontend | Go 1.27.2 (the `go` line in `bff/go.mod`), `ovander/backendkit` v1.25 (`bff` package: gateway, session and pending-login stores), pgx v5 (`database/sql` driver) for the optional Postgres stores |
 
 ---
 
@@ -127,6 +131,9 @@ Browser ──redirect──► socrate.example.com/oauth/authorize (sign-in at 
   `X-CSRF-Token` gets `403`. `GET /api/version` is the one public route: no session, and no
   cookie or bearer forwarded. Anything outside `/bff/*`, `/api/admin/*` and `GET /api/version`
   is `404`.
+- `8081` is the BFF's default `BFF_ADMIN_UPSTREAM` and this repository's kit's `ADMIN_PORT`; on
+  a host installed by the Socrate release kit the admin API listens on `127.0.0.1:8082`, so
+  `BFF_ADMIN_UPSTREAM` points there.
 
 Details: [`bff/README.md`](bff/README.md) and [`deploy/README.md`](deploy/README.md).
 
@@ -141,6 +148,7 @@ Details: [`bff/README.md`](bff/README.md) and [`deploy/README.md`](deploy/README
 │   ├── server.go, auth.go        # Allowlist routing; the /bff/* login, session and step-up routes
 │   ├── oauth.go, ratelimit.go    # Token endpoint calls; per-IP budgets
 │   ├── stores.go                 # Session and pending-login stores (backendkit; memory or Postgres)
+│   ├── attribution.go            # Client IP and User-Agent forwarded to Socrate
 │   ├── Dockerfile                # Distroless image
 │   └── Caddyfile.example         # Minimal Caddy site for the console
 ├── deploy/                       # Single-host deploy kit: Caddyfile, systemd units, env
@@ -194,12 +202,13 @@ Details: [`bff/README.md`](bff/README.md) and [`deploy/README.md`](deploy/README
 ### Prerequisites
 
 - **Node.js 24** (the version in `.nvmrc`, which CI uses) and npm.
-- **Go**: the `toolchain` line in `bff/go.mod` (currently go1.27.2); the `go` command downloads
-  it automatically if needed.
+- **Go**: the version on the `go` line of `bff/go.mod` (currently 1.27.2); with the default
+  `GOTOOLCHAIN=auto` the `go` command downloads it if needed.
 - **A reachable Socrate server** (OAuth server and admin API) with a **confidential OAuth
   client** registered for this console. For local development, register the redirect URI
   `http://localhost:5180/bff/callback`, and sign in with a user that has one of the viewer or
-  admin roles.
+  admin roles. Releases are deployed with Socrate v1.14.x; the console works with Socrate v1.5.0
+  or later, and the policy obligations and custom-claim events appear with Socrate v1.12.0.
 
 ### Install
 
@@ -286,6 +295,9 @@ The Vitest suite covers:
 - **authStore**: session bootstrap from `/bff/session`, network failures, viewer and admin role
   gating, step-up.
 - **monitorStore**: state mutations and computed properties.
+- **version** store and **VersionBadge**: parsing of Socrate's `/api/version` body, the server
+  commit in the badge, and a failed fetch.
+- **Event taxonomy**: every security event type Socrate emits has a label and a category.
 - **themeStore**: system-setting default, the `theme` cookie, and nothing in browser storage.
 - **useApi**: cookie credentials with no `Authorization` header, `X-CSRF-Token` on mutating calls
   only, 401 handling.
@@ -305,6 +317,12 @@ the built SPA is served from a root-owned directory and the BFF runs as a harden
 Artifacts are built on your workstation, optionally pinned to a tag, and shipped with
 `deploy/scripts/push.sh`; no build toolchain runs on the server. See
 [`deploy/README.md`](deploy/README.md).
+
+The owner's production upgrades of the whole suite (Socrate and both consoles) use the release
+kit in the Socrate server repository instead:
+`deploy/release-kit/socrate-release.sh <socrate> <admin> <monitoring>` builds one bundle from the
+three tags, including this repository's SPA, BFF binary and systemd unit (see
+[Release kit](deploy/README.md#release-kit-suite-upgrades)).
 
 The BFF also ships a distroless image: `docker build -t socrate-monitoring-bff bff/` (see
 [`bff/README.md`](bff/README.md) for running it).

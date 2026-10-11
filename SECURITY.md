@@ -27,8 +27,8 @@ the report is credited in the release notes unless you prefer otherwise.
 
 ## Supported versions
 
-Only the latest release receives security fixes. The repository has no tagged release yet, so
-fixes land on `main`.
+Only the latest release receives security fixes: they land on `main` and ship in the next
+release.
 
 ---
 
