@@ -10,7 +10,7 @@ Contributions are accepted under the project's licence, [Apache-2.0](LICENSE).
 ## Development setup
 
 Requirements: Node.js 24 (the version in `.nvmrc`, which CI uses), and Go for the BFF (the `go`
-line in `bff/go.mod`, 1.27.2, which `GOTOOLCHAIN=auto` downloads if needed). Signing in needs a
+line in `bff/go.mod`, 1.27.4, which `GOTOOLCHAIN=auto` downloads if needed). Signing in needs a
 running Socrate server with a confidential OAuth client registered for the console (redirect URI
 `http://localhost:5180/bff/callback` for local work).
 

@@ -99,7 +99,7 @@ Rendered from the production build with sample data.
 | Logging | loglevel 1.9 (levels are not persisted) |
 | Build | Vite 7, vue-tsc 3 |
 | Tests | Vitest 4, @vue/test-utils 2, jsdom |
-| Backend-for-Frontend | Go 1.27.2 (the `go` line in `bff/go.mod`), `ovander/backendkit` v1.27 (`bff` package: gateway, session and pending-login stores), pgx v5 (`database/sql` driver) for the optional Postgres stores |
+| Backend-for-Frontend | Go 1.27.4 (the `go` line in `bff/go.mod`), `ovander/backendkit` v1.27 (`bff` package: gateway, session and pending-login stores), pgx v5 (`database/sql` driver) for the optional Postgres stores |
 
 ---
 
@@ -202,7 +202,7 @@ Details: [`bff/README.md`](bff/README.md) and [`deploy/README.md`](deploy/README
 ### Prerequisites
 
 - **Node.js 24** (the version in `.nvmrc`, which CI uses) and npm.
-- **Go**: the version on the `go` line of `bff/go.mod` (currently 1.27.2); with the default
+- **Go**: the version on the `go` line of `bff/go.mod` (currently 1.27.4); with the default
   `GOTOOLCHAIN=auto` the `go` command downloads it if needed.
 - **A reachable Socrate server** (OAuth server and admin API) with a **confidential OAuth
   client** registered for this console. For local development, register the redirect URI
