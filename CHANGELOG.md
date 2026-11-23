@@ -6,6 +6,12 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-11-23
+
+Security patch release. The BFF is built with **Go 1.27.4**, which fixes two standard-library
+vulnerabilities (`crypto/x509`, `net/http`). **Deploy notes:** rebuild and redeploy; no BFF
+environment variable, Caddy or CSP change; nothing to do for the session store.
+
 ### Security
 - BFF built with **Go 1.27.4** (`go 1.27.4` in `bff/go.mod`, `golang:1.27.4-alpine`). Go 1.27.3 and
   1.27.4 fix GO-2026-6809 (`crypto/x509`) and GO-2026-6859 (`net/http`) in the standard library
@@ -266,7 +272,8 @@ the badge).
 
 Changes before this changelog was introduced are in the git history.
 
-[Unreleased]: https://github.com/ovander/oauth2-monitoring/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/ovander/oauth2-monitoring/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/ovander/oauth2-monitoring/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/ovander/oauth2-monitoring/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/ovander/oauth2-monitoring/compare/v1.1.2...v1.2.0
 [1.1.2]: https://github.com/ovander/oauth2-monitoring/compare/v1.1.1...v1.1.2
