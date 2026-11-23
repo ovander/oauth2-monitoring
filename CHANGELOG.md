@@ -6,6 +6,12 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+### Security
+- BFF built with **Go 1.27.4** (`go 1.27.4` in `bff/go.mod`, `golang:1.27.4-alpine`). Go 1.27.3 and
+  1.27.4 fix GO-2026-6809 (`crypto/x509`) and GO-2026-6859 (`net/http`) in the standard library
+  the BFF links: rebuild and redeploy. No code change; no BFF environment variable, Caddy or CSP
+  change.
+
 ## [1.2.1] - 2026-10-11
 
 Patch release. The BFF moves to backendkit v1.27.0, whose in-memory session store keeps a logout
