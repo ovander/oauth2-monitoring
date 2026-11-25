@@ -6,6 +6,14 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+### Documentation
+- **`deploy/env/socrate.env.example` lists every Socrate opt-in mode.** The template the deploy kit
+  installs for the Socrate server lacked nine of them, among them the four Socrate v1.15.0 added
+  (`PRIVILEGED_SCOPE_MODE`, `CODE_REPLAY_MODE`, `LOCKOUT_SOURCE_MODE`, `SERVICE_USER_SCOPE_MODE`)
+  and `REDIRECT_URI_MATCH_MODE` (next Socrate release). Each is commented out at its default, with
+  go-oauth2's description. **Deploy notes:** nothing to do; the installed
+  `/etc/socrate/socrate.env` is not changed.
+
 ### Changed
 - The Alerts page says that **alert rules are not active yet**: the Socrate server stores them but
   does not evaluate them (go-oauth2 #258), so no rule raises an alert or sends a notification. The
