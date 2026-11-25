@@ -12,6 +12,11 @@ All notable changes to the Socrate monitoring console are documented here. Forma
   notice stays until the server evaluates rules. **Deploy notes:** SPA only; no BFF, Caddy or CSP
   change.
 
+### Tests
+- The test that the Alerts page shows the "alert rules are not active yet" notice now mounts the
+  page and finds the rendered notice, instead of searching the page's source text. A notice left
+  in a comment or behind a false `v-if` now fails it.
+
 ## [1.2.2] - 2026-11-23
 
 Security patch release. The BFF is built with **Go 1.27.4**, which fixes two standard-library
