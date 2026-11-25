@@ -24,10 +24,10 @@ import Checkbox from 'primevue/checkbox'
 import MultiSelect from 'primevue/multiselect'
 import Message from 'primevue/message'
 import ConfirmPopup from 'primevue/confirmpopup'
-import AlertRulesNotEvaluatedNotice from '@/components/AlertRulesNotEvaluatedNotice.vue'
+import AlertRulesModeNotice from '@/components/AlertRulesModeNotice.vue'
 
-import type { AlertRule, TriggeredAlert, Severity } from '@/types'
-import { EVENT_TYPE_LABELS } from '@/types'
+import type { AlertRule, TriggeredAlert, Severity, AlertEvaluationMode } from '@/types'
+import { EVENT_TYPE_LABELS, alertEvaluationMode } from '@/types'
 
 const store = useMonitorStore()
 const api = useApi()
@@ -81,15 +81,19 @@ const historyFilters = ref({
   acknowledged: null as boolean | null
 })
 
+// The server's ALERT_RULES_MODE, known once the rules have loaded.
+const evaluationMode = ref<AlertEvaluationMode | null>(null)
+
 async function loadData() {
   try {
-    await Promise.all([
+    const [rules] = await Promise.all([
       api.fetchAlertRules(),
       api.fetchAlertHistory({
         severity: historyFilters.value.severity || undefined,
         acknowledged: historyFilters.value.acknowledged ?? undefined
       })
     ])
+    evaluationMode.value = alertEvaluationMode(rules)
   } catch (error) {
     toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to load alert data', life: 3000 })
   }
@@ -233,7 +237,7 @@ onMounted(() => {
       </div>
     </Message>
 
-    <AlertRulesNotEvaluatedNotice />
+    <AlertRulesModeNotice v-if="evaluationMode" :mode="evaluationMode" />
 
     <Tabs value="0">
       <TabList>
