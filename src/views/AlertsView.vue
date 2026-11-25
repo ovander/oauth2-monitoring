@@ -24,6 +24,7 @@ import Checkbox from 'primevue/checkbox'
 import MultiSelect from 'primevue/multiselect'
 import Message from 'primevue/message'
 import ConfirmPopup from 'primevue/confirmpopup'
+import AlertRulesNotEvaluatedNotice from '@/components/AlertRulesNotEvaluatedNotice.vue'
 
 import type { AlertRule, TriggeredAlert, Severity } from '@/types'
 import { EVENT_TYPE_LABELS } from '@/types'
@@ -231,6 +232,8 @@ onMounted(() => {
         </span>
       </div>
     </Message>
+
+    <AlertRulesNotEvaluatedNotice />
 
     <Tabs value="0">
       <TabList>

@@ -6,6 +6,12 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+### Changed
+- The Alerts page says that **alert rules are not active yet**: the Socrate server stores them but
+  does not evaluate them (go-oauth2 #258), so no rule raises an alert or sends a notification. The
+  notice stays until the server evaluates rules. **Deploy notes:** SPA only; no BFF, Caddy or CSP
+  change.
+
 ## [1.2.2] - 2026-11-23
 
 Security patch release. The BFF is built with **Go 1.27.4**, which fixes two standard-library
