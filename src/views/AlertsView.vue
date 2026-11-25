@@ -85,16 +85,19 @@ const historyFilters = ref({
 const evaluationMode = ref<AlertEvaluationMode | null>(null)
 
 async function loadData() {
-  try {
-    const [rules] = await Promise.all([
-      api.fetchAlertRules(),
-      api.fetchAlertHistory({
-        severity: historyFilters.value.severity || undefined,
-        acknowledged: historyFilters.value.acknowledged ?? undefined
-      })
-    ])
-    evaluationMode.value = alertEvaluationMode(rules)
-  } catch (error) {
+  // Settled separately: a failed history request must not hide the rules'
+  // mode, nor the other way round.
+  const [rules, history] = await Promise.allSettled([
+    api.fetchAlertRules(),
+    api.fetchAlertHistory({
+      severity: historyFilters.value.severity || undefined,
+      acknowledged: historyFilters.value.acknowledged ?? undefined
+    })
+  ])
+  if (rules.status === 'fulfilled') {
+    evaluationMode.value = alertEvaluationMode(rules.value)
+  }
+  if (rules.status === 'rejected' || history.status === 'rejected') {
     toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to load alert data', life: 3000 })
   }
 }

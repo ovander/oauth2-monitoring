@@ -14,8 +14,9 @@ defineProps<{ mode: AlertEvaluationMode }>()
       <i class="pi pi-info-circle mr-2"></i>
       <strong>Alert rules are not active.</strong>
       Rules are saved, but the server does not evaluate them (<code>ALERT_RULES_MODE</code> is off):
-      no alert is raised and no notification is sent, whatever a rule says. Until it does, watch
-      the Events and Threats pages.
+      no alert is raised and no notification is sent, whatever a rule says. Until an administrator
+      sets <code>ALERT_RULES_MODE</code> to observe or enforce on the Socrate server, watch the
+      Events and Threats pages.
     </span>
   </Message>
   <Message v-else-if="mode === 'observe'" severity="info" :closable="false" class="mb-6" data-testid="alert-rules-mode-observe">

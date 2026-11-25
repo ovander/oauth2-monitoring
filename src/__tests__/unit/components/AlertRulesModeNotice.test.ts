@@ -5,14 +5,13 @@ import AlertRulesModeNotice from '@/components/AlertRulesModeNotice.vue'
 import { alertEvaluationMode } from '@/types'
 
 const fetchAlertRules = vi.fn()
+const fetchAlertHistory = vi.fn()
+const toastAdd = vi.fn()
 
 vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    fetchAlertRules,
-    fetchAlertHistory: vi.fn().mockResolvedValue({ items: [], total: 0 }),
-  }),
+  useApi: () => ({ fetchAlertRules, fetchAlertHistory }),
 }))
-vi.mock('primevue/usetoast', () => ({ useToast: () => ({ add: vi.fn() }) }))
+vi.mock('primevue/usetoast', () => ({ useToast: () => ({ add: toastAdd }) }))
 vi.mock('primevue/useconfirm', () => ({ useConfirm: () => ({ require: vi.fn() }) }))
 
 // go-oauth2 #258: the server reports its ALERT_RULES_MODE with the rules as
@@ -23,6 +22,7 @@ describe('AlertRulesModeNotice', () => {
     const text = mount(AlertRulesModeNotice, { props: { mode: 'off' } }).text()
     expect(text).toContain('Alert rules are not active.')
     expect(text).toContain('no alert is raised and no notification is sent')
+    expect(text).toContain('sets ALERT_RULES_MODE to observe or enforce on the Socrate server')
   })
 
   it('says that no notification is sent in observe mode', () => {
@@ -52,6 +52,8 @@ describe('Alerts page', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     fetchAlertRules.mockReset()
+    fetchAlertHistory.mockReset().mockResolvedValue({ items: [], total: 0 })
+    toastAdd.mockReset()
   })
 
   async function mountPage() {
@@ -78,5 +80,14 @@ describe('Alerts page', () => {
     fetchAlertRules.mockRejectedValue(new Error('unreachable'))
     const wrapper = await mountPage()
     expect(wrapper.findComponent(AlertRulesModeNotice).exists()).toBe(false)
+    expect(toastAdd).toHaveBeenCalled()
+  })
+
+  it('still shows the notice when only the history fails to load', async () => {
+    fetchAlertRules.mockResolvedValue({ rules: [], evaluation_mode: 'observe' })
+    fetchAlertHistory.mockRejectedValue(new Error('unreachable'))
+    const wrapper = await mountPage()
+    expect(wrapper.findComponent(AlertRulesModeNotice).props('mode')).toBe('observe')
+    expect(toastAdd).toHaveBeenCalled()
   })
 })
