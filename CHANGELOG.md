@@ -6,6 +6,15 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+### Changed
+- **The Alerts page follows the server's alert-rule mode.** Socrate now evaluates alert rules under
+  `ALERT_RULES_MODE` (go-oauth2 #428) and reports it with the rules as `evaluation_mode`. The fixed
+  "not active yet" notice becomes `AlertRulesModeNotice`: under `off` (or a server that does not
+  report a mode) it says rules do nothing; under `observe`, that alerts are recorded but no
+  notification is sent; under `enforce`, nothing. It shows once the rules have loaded.
+  **Deploy notes:** SPA only; no BFF, Caddy or CSP change. Works with an older server (shown as
+  off).
+
 ### Documentation
 - **`deploy/env/socrate.env.example` lists every Socrate opt-in mode.** The template the deploy kit
   installs for the Socrate server lacked nine of them, among them the four Socrate v1.15.0 added

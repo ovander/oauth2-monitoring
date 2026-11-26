@@ -282,8 +282,22 @@ export interface AlertRule {
   updated_at?: string
 }
 
+// ALERT_RULES_MODE of the Socrate server (go-oauth2 #258): whether the alert
+// rules are evaluated (observe, enforce) and their notifications sent
+// (enforce).
+export type AlertEvaluationMode = 'off' | 'observe' | 'enforce'
+
 export interface AlertRulesResponse {
   rules: AlertRule[]
+  // Absent from a server older than go-oauth2 #258, which never evaluates.
+  evaluation_mode?: AlertEvaluationMode
+}
+
+// alertEvaluationMode reads evaluation_mode: anything but observe or enforce
+// (an older server, an unknown value) means the rules are not evaluated.
+export function alertEvaluationMode(data: Partial<AlertRulesResponse> | null | undefined): AlertEvaluationMode {
+  const mode = data?.evaluation_mode
+  return mode === 'observe' || mode === 'enforce' ? mode : 'off'
 }
 
 // Triggered Alerts
