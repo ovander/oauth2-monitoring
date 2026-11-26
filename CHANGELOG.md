@@ -6,33 +6,32 @@ All notable changes to the Socrate monitoring console are documented here. Forma
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-26
+
+Feature release. The Alerts page says whether the Socrate server evaluates the alert rules, which
+Socrate v1.16.0 does under `ALERT_RULES_MODE`. **Deploy notes:** SPA only; no BFF environment
+variable, Caddy or CSP change. Works with any Socrate v1.x: an older server is shown as not
+evaluating rules, which is true of it.
+
 ### Changed
-- **The Alerts page follows the server's alert-rule mode.** Socrate now evaluates alert rules under
-  `ALERT_RULES_MODE` (go-oauth2 #428) and reports it with the rules as `evaluation_mode`. The fixed
-  "not active yet" notice becomes `AlertRulesModeNotice`: under `off` (or a server that does not
-  report a mode) it says rules do nothing; under `observe`, that alerts are recorded but no
-  notification is sent; under `enforce`, nothing. It shows once the rules have loaded.
-  **Deploy notes:** SPA only; no BFF, Caddy or CSP change. Works with an older server (shown as
-  off).
+- **The Alerts page follows the server's alert-rule mode** (`AlertRulesModeNotice`). Socrate
+  v1.16.0 evaluates alert rules under `ALERT_RULES_MODE` and reports it with the rules as
+  `evaluation_mode`. Under `off`, or with a server that reports no mode, the page says rules are
+  saved but do nothing, and names the setting to change; under `observe`, that alerts are
+  recorded but no notification is sent; under `enforce`, nothing. The notice shows once the rules
+  have loaded, also when only the alert history fails to load. Until this release the page said
+  rules were not active yet (go-oauth2 #258).
 
 ### Documentation
 - **`deploy/env/socrate.env.example` lists every Socrate opt-in mode.** The template the deploy kit
   installs for the Socrate server lacked nine of them, among them the four Socrate v1.15.0 added
   (`PRIVILEGED_SCOPE_MODE`, `CODE_REPLAY_MODE`, `LOCKOUT_SOURCE_MODE`, `SERVICE_USER_SCOPE_MODE`)
-  and `REDIRECT_URI_MATCH_MODE` (next Socrate release). Each is commented out at its default, with
-  go-oauth2's description. **Deploy notes:** nothing to do; the installed
-  `/etc/socrate/socrate.env` is not changed.
-
-### Changed
-- The Alerts page says that **alert rules are not active yet**: the Socrate server stores them but
-  does not evaluate them (go-oauth2 #258), so no rule raises an alert or sends a notification. The
-  notice stays until the server evaluates rules. **Deploy notes:** SPA only; no BFF, Caddy or CSP
-  change.
+  and `REDIRECT_URI_MATCH_MODE` (Socrate v1.16.0). Each is commented out at its default, with
+  go-oauth2's description. The installed `/etc/socrate/socrate.env` is not changed.
 
 ### Tests
-- The test that the Alerts page shows the "alert rules are not active yet" notice now mounts the
-  page and finds the rendered notice, instead of searching the page's source text. A notice left
-  in a comment or behind a false `v-if` now fails it.
+- The Alerts page tests mount the page and find the rendered notice, instead of searching the
+  page's source text: a notice left in a comment or behind a false `v-if` fails them.
 
 ## [1.2.2] - 2026-11-23
 
