@@ -13,6 +13,8 @@ All notable changes to the Socrate monitoring console are documented here. Forma
   `MFA_RECOVERY_CODES_REVERIFY_MODE` (v1.16.1), and `AUDIT_INTEGRITY_SCAN_INTERVAL_SECONDS` and
   `_LOOKBACK_SECONDS`, each commented out at its default; it now matches go-oauth2's copy. No
   behaviour change.
+- The Socrate env template also lists `ACR_VALUES_MODE` (Socrate v1.16.2), commented out at its
+  default `off`, as go-oauth2's copy does. No behaviour change.
 
 ## [1.3.0] - 2026-11-26
 
